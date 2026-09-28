@@ -1,0 +1,4 @@
+import assert from 'node:assert/strict';
+function hilbert(x){const n=x.length,m=x.reduce((a,b)=>a+b,0)/n,z=x.map(v=>v-m),a=[];for(let k=0;k<n;k++){let re=0,im=0;for(let j=0;j<n;j++){const q=-2*Math.PI*k*j/n;re+=z[j]*Math.cos(q);im+=z[j]*Math.sin(q)}const keep=k===0||(k<n/2?2:0);a.push({re:keep*re/n,im:keep*im/n})}return z.map((_,j)=>{let re=0,im=0;for(let k=0;k<n;k++){const q=2*Math.PI*k*j/n;re+=a[k].re*Math.cos(q)-a[k].im*Math.sin(q);im+=a[k].re*Math.sin(q)+a[k].im*Math.cos(q)}return Math.atan2(im,re)})}
+for(const phase of [0,Math.PI/2,Math.PI]){const x=[],y=[];for(let i=0;i<240;i++){const t=i/30;x.push(Math.sin(2*Math.PI*.7*t));y.push(Math.sin(2*Math.PI*.7*t+phase))}const a=hilbert(x),b=hilbert(y),d=Math.atan2(Math.sin(a.at(-20)-b.at(-20)),Math.cos(a.at(-20)-b.at(-20)));assert.ok(Math.abs(Math.abs(d)-Math.abs(phase))<.35)}
+console.log('phase tests passed: 0/90/180 degrees');
