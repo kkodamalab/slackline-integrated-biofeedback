@@ -1,4 +1,4 @@
-import './camera-runtime.js';
+import { CameraRuntime } from './camera-runtime.js';
 import { FilesetResolver, PoseLandmarker } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22';
 const $=id=>document.getElementById(id),S={run:false,sim:false,streams:[],samples:[],last:0};
 const mid=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2,visibility:Math.min(a.visibility??1,b.visibility??1)}),edges=[[11,12],[23,24],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,25],[25,27],[24,26],[26,28]];
