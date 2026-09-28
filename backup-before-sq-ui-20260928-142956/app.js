@@ -1,5 +1,4 @@
 import { CameraRuntime } from './camera-runtime.js';
-import './qr-init.js';
 import { mapCover } from './geometry.mjs';
 
 const $ = id => document.getElementById(id);

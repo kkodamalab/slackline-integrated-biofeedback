@@ -1,0 +1,1 @@
+export function mapCover(p,sourceWidth,sourceHeight,displayWidth,displayHeight,mirror=false){const s=Math.max(displayWidth/sourceWidth,displayHeight/sourceHeight),x=p.x*sourceWidth*s-(sourceWidth*s-displayWidth)/2;return {x:(mirror?displayWidth-x:x),y:p.y*sourceHeight*s-(sourceHeight*s-displayHeight)/2}}
