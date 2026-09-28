@@ -1,0 +1,2 @@
+export function storeRemote(state,slot,data,receivedAt){state[slot]={landmarks:data.landmarks||null,receivedAt,timestamp:data.timestamp??null,meta:{videoWidth:data.videoWidth,videoHeight:data.videoHeight,mirror:!!data.mirror},status:data.status||((data.landmarks?.length===33)?'detected':'no-person')};return state[slot]}
+export function currentRemote(state,slot,now,maxAge=1200){const x=state[slot];return x&&now-x.receivedAt<=maxAge?x:null}
