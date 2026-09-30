@@ -4,7 +4,7 @@
 
 ## 構成
 
-- `index.html` / `app.js`: PCホスト画面。模擬データ、PCカメラA/B、BF切替、CSV/JSON出力、A/B QR生成。
+- `index.html` / `app.js`: PCホスト画面。模擬データ、Camera 1/2、BF切替、CSV/JSON出力、Device 1/2 QR生成。
 - `camera-runtime.js`: MediaPipe Tasks Vision 0.10.35の動的初期化、PCカメラ、33点ランドマーク、visibility、推定状態。
 - `capture.html` / `capture.js`: SQアプリと同じPeerJS 1.5.5方式のスマートフォン撮影ページ。A/B識別、前面・背面切替、MediaPipe推定結果送信。
 - `styles.css`: 既存統合アプリのレイアウトを維持。SQアプリの配色・カード構成を参照。
@@ -22,6 +22,10 @@
 必要なランドマークの visibility が 0.5 未満なら値を `null`（欠損）にします。相対位相は左右手首 y の不規則時刻系列を中央値サンプリング間隔へ線形補間し、平均除去後の離散Hilbert変換から瞬時位相を求めます。位相差は `left - right` を −180°〜180°へ折り返します。短い窓、70%未満の有効標本、または低振幅では算出しません。
 
 ## 実験操作と記録
+
+Camera 1 / Camera 2 は撮影方向を意味しない独立した入力枠です。各枠の Source には `PC Camera`、QRから接続する `Device 1`、`Device 2` のいずれも選択できます。同じスマートフォンを両枠へ表示することもできますが、ブラウザの同一ローカルカメラ競合を避けるため `PC Camera` は同時に一枠だけ使用します。Device 1/2 の識別は既存のPeerJS/WebRTC接続メタデータ A/B を維持し、表示先だけをSource設定で割り当てます。
+
+波形はVARIABLESで選択した対応済み時系列を表示します。Absoluteは実測単位（Auto rangeまたはY min/max）、RelativeはWindow startまたはTrial startからの差、Standardizedは現在窓の平均・標準偏差によるZ-scoreです。標準偏差0または標本不足は描画しません。Absoluteで異なる単位を同時選択した場合は、誤解を招く共通軸へ重ねず警告します。Y軸モード、range、baseline、標準化方式、seriesはCSV各行のBF settingsおよびJSON settingsに保存されます。
 
 `index.html` が唯一のPC操作画面です。WHEN（No BF / Concurrent / Terminal）、WHAT（KR / KP）、情報量、提示方法、複数の計測変数、左右、目標と許容範囲を試行ごとに設定します。No BFでも計測記録は継続します。Terminalは停止時に試行要約を表示します。Exploratory は研究上の定義が確定していないため選択肢として提供していません。
 

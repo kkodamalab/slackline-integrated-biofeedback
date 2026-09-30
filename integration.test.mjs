@@ -9,12 +9,15 @@ for(const camera of ['A','B']) for(const control of ['Video','Axis','Skeleton'])
 for(const id of ['cameraAEnabled','cameraBEnabled','phaseGauge','phaseTarget','phaseTolerance','phaseChart']) assert(ids.has(id));
 assert.match(app,/cameraPhaseObservation\(time, measures\.A\)/, 'phase must use camera A only');
 assert.doesNotMatch(app,/measures\.A\.missing\s*\?\s*measures\.B/, 'phase must not fall back to B');
-assert.match(app,/setVideoPresence\(slot,true\)/, 'remote video playback must clear waiting state');
+assert.match(app,/state\.remoteStreams\[slot\]=stream; bindVideoSources\(\)/, 'remote video must be routed to the selected camera slot');
 assert.match(runtime,/this\.onVideo\(id,true\)/, 'local video playback must clear waiting state');
-assert.match(app,/terminalResult = mean \?\? Number\.NaN/, 'terminal result must persist, including unavailable result');
+assert.match(app,/terminalResult = result \?\? Number\.NaN/, 'terminal result must persist, including unavailable result');
 assert.match(app,/circularMeanDegrees\(valid\)/, 'terminal result must use circular mean');
 assert(html.indexOf('phase-monitor') < html.indexOf('experiment panel'), 'research monitor must precede settings');
 assert.match(html,/id="how"[\s\S]*type="checkbox"/, 'HOW must use checkboxes');
 assert.match(app,/new BroadcastChannel\('slackline-feedback-v1'\)/); assert.match(feedbackApp,/BroadcastChannel\('slackline-feedback-v1'\)/);
 assert.match(feedbackHtml,/id="cameraWrap"/); assert.match(app,/rawLeftWristY/); assert.match(app,/filteredLeftWristY/);
+assert.match(app,/landmarks\.slice\(11\)/, 'face landmarks 0-10 must not be drawn as joint markers');
+for(const id of ['yAxisMode','yAutoRange','yMin','yMax','relativeBaseline','graphWarning'])assert(ids.has(id));
+for(const source of ['pc','device1','device2'])assert.match(html,new RegExp(`option value="${source}"`));
 console.log('integration tests passed: DOM ids, camera controls, video presence, A-only phase, terminal persistence');
