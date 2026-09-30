@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {targetDifference,targetInside,targetMeta,targetPercent,targetSnapshot} from './target-feedback.mjs';
+assert.equal(targetDifference('relativePhase',-179,179),2);
+assert.equal(targetInside('relativePhase',-179,179,3),true);
+assert.equal(targetInside('leftKnee',95,90,5),true);
+assert.equal(targetInside('leftWristY',null,.5,.1),null);
+assert.equal(targetPercent('leftKnee',90),50);assert.equal(targetPercent('leftWristY',.25),25);
+assert.equal(targetMeta('bodyAxisHead').min,-90);
+assert.deepEqual(targetSnapshot({targetVariable:'leftKnee',target:90,tolerance:5},{leftKnee:92},{valid:true,value:40}),{key:'leftKnee',label:'Left Knee',unit:'°',min:0,max:180,decimals:1,value:92,target:90,tolerance:5,inside:true});
+console.log('target feedback tests passed: variable ranges, units, circular wrapping and missing values');

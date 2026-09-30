@@ -7,7 +7,7 @@ const target = new URLSearchParams(location.search).get("peer");
 const source = new URLSearchParams(location.search).get("source") === "B" ? "B" : "A";
 const sessionId = crypto.randomUUID();
 const video = $("video"), canvas = $("canvas"), root = $(".capture-card");
-$(".privacy-note").textContent = "映像は接続中のPCへ直接送られます。PCで録画を開始した場合のみ保存されます。";
+$(".privacy-note").textContent = "Video is sent directly to the connected PC and is stored only when recording is started there.";
 let stream, pose, conn, call, peer, last = -1, running = false, lastSent = 0;
 let facing = "environment", lens = "wide", cameraDevices = [], ultraId = null, wideId = null;
 let manualDevice = "", switching = false, generation = 0;
@@ -16,17 +16,17 @@ const feedbackReadout=document.createElement("div");feedbackReadout.className="p
 const switcher = document.createElement("div");
 switcher.className = "camera-switcher";
 switcher.setAttribute("role", "group");
-switcher.setAttribute("aria-label", "前面・背面カメラ");
-switcher.innerHTML = '<button type="button" class="active" data-facing="environment">背面カメラ</button><button type="button" data-facing="user">インカメラ</button>';
+switcher.setAttribute("aria-label", "Front and rear cameras");
+switcher.innerHTML = '<button type="button" class="active" data-facing="environment">Rear-facing</button><button type="button" data-facing="user">User-facing</button>';
 $(".lens-controls").before(switcher);
-if (!target) { $("#systemStatus").textContent = "接続先がありません"; $("#startCapture").disabled = true; }
-else $("#systemStatus").textContent = `Smartphone ${source} / ID ${sessionId.slice(0, 8)} 接続準備完了`;
+if (!target) { $("#systemStatus").textContent = "Connection destination is missing"; $("#startCapture").disabled = true; }
+else $("#systemStatus").textContent = `Device ${source === 'A' ? '1' : '2'} / ID ${sessionId.slice(0, 8)} ready to connect`;
 
 function classify(label) {
-  if (/front|face\s*time|selfie|前面|インカメラ/i.test(label)) return "front";
-  if (/ultra[\s-]*wide|ultrawide|super[\s-]*wide|超広角|0[.,]5\s*[x×]/i.test(label)) return "ultra";
-  if (/telephoto|望遠|tele\b/i.test(label)) return "tele";
-  if (/\bwide\b|広角|back|rear|背面|environment/i.test(label)) return "wide";
+  if (/front|face\s*time|selfie|user-facing/i.test(label)) return "front";
+  if (/ultra[\s-]*wide|ultrawide|super[\s-]*wide|0[.,]5\s*[x×]/i.test(label)) return "ultra";
+  if (/telephoto|tele\b/i.test(label)) return "tele";
+  if (/\bwide\b|back|rear|environment/i.test(label)) return "wide";
   return "unknown";
 }
 function updateButtons() {
@@ -34,8 +34,8 @@ function updateButtons() {
   document.querySelectorAll("[data-lens]").forEach(b => b.classList.toggle("active", facing === "environment" && !manualDevice && b.dataset.lens === lens));
   switcher.querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.facing === facing));
   $("#lensStatus").textContent = ultraId
-    ? "物理的なUltra Wideを検出しました。0.5×で切替可能です。"
-    : "この端末・ブラウザでは0.5×カメラを選択できません。手動選択も確認してください。";
+    ? "A physical ultra-wide camera was found. You can switch to 0.5×."
+    : "This device or browser does not expose a 0.5× camera. Check manual camera selection.";
 }
 async function cameras() {
   try {
@@ -43,11 +43,11 @@ async function cameras() {
     ultraId = cameraDevices.find(d => classify(d.label) === "ultra")?.deviceId || null;
     wideId = cameraDevices.find(d => classify(d.label) === "wide")?.deviceId || null;
     const select = $("#cameraSelect");
-    select.replaceChildren(new Option("自動選択", ""), ...cameraDevices.map((d, i) => new Option(d.label || `カメラ ${i + 1}`, d.deviceId)));
+    select.replaceChildren(new Option("Automatic selection", ""), ...cameraDevices.map((d, i) => new Option(d.label || `Camera ${i + 1}`, d.deviceId)));
     if (manualDevice && cameraDevices.some(d => d.deviceId === manualDevice)) select.value = manualDevice;
     else { manualDevice = ""; select.value = ""; }
     updateButtons();
-  } catch (error) { $("#lensStatus").textContent = `カメラ一覧を取得できません: ${error.message}`; }
+  } catch (error) { $("#lensStatus").textContent = `Could not list cameras: ${error.message}`; }
 }
 function closeConnection() {
   running = false; generation++;
@@ -64,14 +64,14 @@ async function start() {
   try {
     closeConnection(); last = -1;
     const deviceId = manualDevice || (facing === "environment" ? lens === "ultra" ? ultraId : wideId : cameraDevices.find(d => classify(d.label) === "front")?.deviceId);
-    if (lens === "ultra" && facing === "environment" && !manualDevice && !ultraId) throw new Error("0.5×カメラを選択できません");
+    if (lens === "ultra" && facing === "environment" && !manualDevice && !ultraId) throw new Error("A 0.5× camera is unavailable");
     stream = await getCamera({ video: { ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: facing } }), width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24 } }, audio: false });
     const actualId = stream.getVideoTracks()[0].getSettings().deviceId;
-    if (lens === "ultra" && !manualDevice && actualId && actualId !== ultraId) throw new Error("Ultra Wideを開始できませんでした");
+    if (lens === "ultra" && !manualDevice && actualId && actualId !== ultraId) throw new Error("Could not start the ultra-wide camera");
     video.srcObject = stream; await video.play();
     canvas.width = video.videoWidth; canvas.height = video.videoHeight;
     $(".placeholder", root).classList.add("hidden");
-    await cameras(); // 権限許可後にデバイス名が公開される場合がある
+    await cameras(); // Device names may become available after permission is granted
     pose ??= await createPose();
     peer = new Peer();
     await new Promise((resolve, reject) => { peer.on("open", resolve); peer.on("error", reject); });
@@ -87,14 +87,14 @@ async function start() {
     });
     conn.on("open", () => {
       $("#statusDot").classList.add("active");
-      $("#systemStatus").textContent = `Smartphone ${source} · ${facing === "user" ? "インカメラ" : lens === "ultra" ? "0.5× Ultra Wide" : "背面カメラ"}をPCへ送信中`;
-      button.textContent = "カメラを再接続";
+      $("#systemStatus").textContent = `Device ${source === 'A' ? '1' : '2'} · ${facing === "user" ? "User-facing" : lens === "ultra" ? "0.5× Ultra Wide" : "Rear-facing"} streaming to PC`;
+      button.textContent = "Reconnect Camera";
       running = true; const current = generation; requestAnimationFrame(t => loop(t, current));
     });
-    peer.on("error", e => { $("#systemStatus").textContent = `接続エラー: ${e.type}`; });
+    peer.on("error", e => { $("#systemStatus").textContent = `Connection error: ${e.type}`; });
   } catch (error) {
     closeConnection();
-    $("#systemStatus").textContent = error.name === "NotAllowedError" ? "カメラを許可してください" : error.message;
+    $("#systemStatus").textContent = error.name === "NotAllowedError" ? "Allow camera access" : error.message;
   } finally { button.disabled = false; switching = false; }
 }
 function loop(t, current) {

@@ -1,7 +1,7 @@
-<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b0d0f"><title>Participant Feedback</title><link rel="stylesheet" href="feedback.css"></head><body>
-<main><section id="waiting"><strong>FEEDBACK VIEW</strong><p>研究者画面からのフィードバックを待っています。</p></section><section id="content" hidden>
-<div id="cameraWrap" class="camera"><img id="camera" alt="Camera A"><img id="skeleton" class="skeleton" alt="Skeleton overlay"></div>
+<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b0d0f"><title>Participant Feedback</title><link rel="stylesheet" href="feedback.css"></head><body>
+<main><section id="waiting"><strong>FEEDBACK VIEW</strong><p>Waiting for feedback from the researcher view.</p></section><section id="content" hidden>
+<div id="cameraWrap" class="camera"><img id="camera" alt="Camera 1"><img id="skeleton" class="skeleton" alt="Skeleton overlay"></div>
 <div id="numeric" class="numeric">—</div><canvas id="waveform" width="1000" height="280"></canvas>
-<div id="gaugeBlock"><div class="gauge"><div id="tolerance" class="tolerance"></div><i id="target"></i><b id="needle"></b></div><div class="scale"><span>−180°</span><span>0°</span><span>+180°</span></div></div>
+<div id="gaugeBlock"><div class="gauge"><div id="tolerance" class="tolerance"></div><i id="target"></i><b id="needle"></b></div><div class="scale"><span id="scaleMin">−180°</span><span id="scaleMid">0°</span><span id="scaleMax">180°</span></div></div>
 <div id="targetText" class="target-text"></div><p id="result"></p>
 </section></main><script type="module" src="feedback.js"></script></body></html>

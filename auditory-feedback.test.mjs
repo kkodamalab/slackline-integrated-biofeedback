@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';import{BEEP_TYPES,auditoryDecision,resol
 assert.deepEqual(BEEP_TYPES,['high','low','double','soft-chime','alert']);
 const base={enabled:true,when:'concurrent',trigger:'enter',cooldown:1000},ctx={recording:true,terminal:false,previousOnTarget:false,onTarget:true,now:2000};
 assert.equal(auditoryDecision(base,ctx,0),true);assert.equal(auditoryDecision(base,ctx,1500),false);
+assert.equal(auditoryDecision(base,{...ctx,previousOnTarget:null},0),true,'first valid value inside target may trigger enter');
 assert.equal(auditoryDecision(base,{...ctx,previousOnTarget:true,onTarget:true},0),false, 'inside -> inside must not repeat enter');
 assert.equal(auditoryDecision({...base,trigger:'exit'},{...ctx,previousOnTarget:true,onTarget:false},0),true);
 assert.equal(auditoryDecision({...base,trigger:'outside'},{...ctx,onTarget:false},0),true);
@@ -9,5 +10,7 @@ assert.equal(auditoryDecision({...base,trigger:'outside'},{...ctx,onTarget:false
 assert.equal(auditoryDecision({...base,trigger:'outside'},{...ctx,onTarget:false,now:3000},2000),true, 'outside repeats after cooldown');
 assert.equal(auditoryDecision({...base,when:'none'},ctx,0),false);assert.equal(auditoryDecision(base,{...ctx,recording:false},0),false);
 assert.equal(auditoryDecision({...base,when:'terminal'},{...ctx,recording:false,terminal:true},0),true);
+assert.equal(auditoryDecision({...base,when:'terminal',trigger:'exit'},{...ctx,recording:false,terminal:true,previousOnTarget:false,onTarget:false},0),true,'terminal result must not depend on prior frame');
+assert.equal(auditoryDecision(base,{...ctx,onTarget:null},0),false,'missing target values must never trigger audio');
 const voice={...base,cooldown:2000};assert.equal(auditoryDecision(voice,ctx,500),false);assert.equal(auditoryDecision(voice,ctx,-1),true);
 assert.equal(resolvePhrase('custom',' よし '),'よし');assert.equal(resolvePhrase('OK','ignored'),'OK');console.log('auditory feedback tests passed: five types, triggers, timing and cooldown');

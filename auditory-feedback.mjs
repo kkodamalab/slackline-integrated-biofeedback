@@ -1,7 +1,7 @@
 export const BEEP_TYPES = ['high','low','double','soft-chime','alert'];
 
 export function triggerMatches(trigger, previousOnTarget, onTarget) {
-  if (trigger === 'enter') return previousOnTarget === false && onTarget;
+  if (trigger === 'enter') return previousOnTarget !== true && onTarget;
   if (trigger === 'exit') return previousOnTarget === true && !onTarget;
   return trigger === 'outside' && !onTarget;
 }
@@ -10,11 +10,13 @@ export function auditoryDecision(config, context, lastPlayed = -Infinity) {
   const timingAllowed = config.when === 'concurrent' ? context.recording && !context.terminal
     : config.when === 'terminal' ? context.terminal === true : false;
   const cooldown = Math.max(0, Number(config.cooldown) || 0);
-  return timingAllowed && config.enabled && triggerMatches(config.trigger, context.previousOnTarget, context.onTarget)
+  const triggered=context.terminal ? (config.trigger==='enter'?context.onTarget:!context.onTarget) : triggerMatches(config.trigger, context.previousOnTarget, context.onTarget);
+  return timingAllowed && config.enabled && context.onTarget!==null && triggered
     && context.now - lastPlayed >= cooldown;
 }
 
 let sharedAudioContext;
+export function audioStatus(){return sharedAudioContext?.state||'not initialized'}
 export async function resumeAudio(AudioContextClass=globalThis.AudioContext||globalThis.webkitAudioContext) {
   if(!AudioContextClass)return null;
   sharedAudioContext ||= new AudioContextClass();
