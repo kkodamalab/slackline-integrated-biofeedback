@@ -1,4 +1,5 @@
-import assert from 'node:assert/strict';
-function hilbert(x){const n=x.length,m=x.reduce((a,b)=>a+b,0)/n,z=x.map(v=>v-m),a=[];for(let k=0;k<n;k++){let re=0,im=0;for(let j=0;j<n;j++){const q=-2*Math.PI*k*j/n;re+=z[j]*Math.cos(q);im+=z[j]*Math.sin(q)}const keep=k===0||(k<n/2?2:0);a.push({re:keep*re/n,im:keep*im/n})}return z.map((_,j)=>{let re=0,im=0;for(let k=0;k<n;k++){const q=2*Math.PI*k*j/n;re+=a[k].re*Math.cos(q)-a[k].im*Math.sin(q);im+=a[k].re*Math.sin(q)+a[k].im*Math.cos(q)}return Math.atan2(im,re)})}
-for(const phase of [0,Math.PI/2,Math.PI]){const x=[],y=[];for(let i=0;i<240;i++){const t=i/30;x.push(Math.sin(2*Math.PI*.7*t));y.push(Math.sin(2*Math.PI*.7*t+phase))}const a=hilbert(x),b=hilbert(y),d=Math.atan2(Math.sin(a.at(-20)-b.at(-20)),Math.cos(a.at(-20)-b.at(-20)));assert.ok(Math.abs(Math.abs(d)-Math.abs(phase))<.35)}
-console.log('phase tests passed: 0/90/180 degrees');
+import assert from 'node:assert/strict'; import { relativePhase } from './phase.mjs';
+const signal=(phase=0,amp=.08,missing=false)=>Array.from({length:180},(_,i)=>{const time=i*33+(i%7)*2;return {time,left:.5+amp*Math.sin(time/1000*2*Math.PI*.8),right:missing&&i%2?null:.5+amp*Math.sin(time/1000*2*Math.PI*.8+phase)}});
+for(const deg of [0,90,180]){const result=relativePhase(signal(deg*Math.PI/180));assert(result.valid);assert(Math.abs(Math.abs(result.value)-deg)<12,`${deg}: ${result.value}`)}
+assert.equal(relativePhase(signal(0,.001)).valid,false); assert.equal(relativePhase(signal(0,.08,true)).valid,false); assert.equal(relativePhase(signal().slice(0,12)).valid,false);
+console.log('phase tests passed: irregular 0/90/180, low amplitude, missing, short window');

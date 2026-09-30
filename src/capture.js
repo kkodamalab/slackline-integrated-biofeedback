@@ -11,6 +11,7 @@ $(".privacy-note").textContent = "映像は接続中のPCへ直接送られま�
 let stream, pose, conn, call, peer, last = -1, running = false, lastSent = 0;
 let facing = "environment", lens = "wide", cameraDevices = [], ultraId = null, wideId = null;
 let manualDevice = "", switching = false, generation = 0;
+const feedbackReadout=document.createElement("div");feedbackReadout.className="phone-feedback";feedbackReadout.hidden=true;root.querySelector(".viewport").append(feedbackReadout);
 
 const switcher = document.createElement("div");
 switcher.className = "camera-switcher";
@@ -78,7 +79,7 @@ async function start() {
     conn = peer.connect(target, { reliable: false, metadata: { source, sessionId } });
     conn.on("data", message => {
       if (message.type !== "feedback") return;
-      root.classList.toggle("feedback-suppressed", !message.visible);
+      root.classList.toggle("feedback-suppressed", !message.visible); feedbackReadout.hidden=!message.visible; feedbackReadout.textContent=message.visible?`${Number(message.value).toFixed(1)}° / TARGET ${message.target}°`:"";
       if (!message.visible) canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
     });
     conn.on("open", () => {
