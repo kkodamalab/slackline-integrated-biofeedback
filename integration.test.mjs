@@ -7,6 +7,14 @@ const ids=new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(x=>x[1]));
 const referenced=[...app.matchAll(/\$\('([^']+)'\)/g)].map(x=>x[1]);
 assert.deepEqual([...new Set(referenced.filter(id=>!ids.has(id)))],[], 'app.js references a missing DOM id');
 for(const camera of ['A','B']) for(const control of ['Video','Reference','Axis','Skeleton','Joints']) assert(ids.has(`camera${camera}${control}`));
+for(const camera of ['A','B']) {
+  assert.match(html,new RegExp(`id="camera${camera}Video"[^>]*checked`));
+  assert.match(html,new RegExp(`id="camera${camera}Reference"[^>]*checked`));
+  assert.match(html,new RegExp(`id="camera${camera}Axis"[^>]*checked`));
+  assert.doesNotMatch(html,new RegExp(`id="camera${camera}(?:Skeleton|Joints)"[^>]*checked`));
+}
+assert.match(html,/id="referenceColor"[^>]*value="#f3c969"/);
+assert.match(html,/id="axisColor"[^>]*value="#59d6c7"/);
 for(const id of ['cameraAEnabled','cameraBEnabled','phaseGauge','phaseTarget','phaseTolerance','phaseChart']) assert(ids.has(id));
 assert.match(app,/cameraPhaseObservation\(time, measures\.A\)/, 'phase must use camera A only');
 assert.doesNotMatch(app,/measures\.A\.missing\s*\?\s*measures\.B/, 'phase must not fall back to B');
@@ -26,5 +34,11 @@ for(const id of ['yAxisMode','yAutoRange','yMin','yMax','relativeBaseline','grap
 for(const source of ['pc','device1','device2'])assert.match(html,new RegExp(`option value="${source}"`));
 for(const camera of ['A','B'])for(const setting of ['backgroundMode','backgroundBlur','backgroundColor'])assert(ids.has(`${setting}${camera}`));
 assert.match(app,/Choose another source for either camera/, 'duplicate PC camera choice must warn instead of silently changing the selection');
+assert.match(app,/segmentExternal\(id,\$\('video'\+id\),time\)/, 'remote Device 1/2 video must use host-side segmentation');
+assert.match(runtime,/Math\.min\(384,video\.videoWidth\)/, 'remote segmentation must use a bounded processing resolution');
+assert.match(runtime,/minimumInterval=120/, 'remote segmentation must be throttled for two-camera performance');
+assert.match(runtime,/runningMode:'IMAGE'/, 'remote segmentation must not share video tracking state across Device 1 and Device 2');
+assert.match(html,/class="control-grid vbf-settings"/, 'settings must use the VBF Motion Lab control-card hierarchy');
+assert.doesNotMatch(html,/class="settings-grid"/, 'the former custom settings grid must not remain');
 for(const file of ['index.html','capture.html','feedback.html'])assert.doesNotMatch(fs.readFileSync(file,'utf8'),/[ぁ-んァ-ン一-龯]/,`${file} must contain English UI text only`);
 console.log('integration tests passed: DOM ids, camera controls, video presence, A-only phase, terminal persistence');

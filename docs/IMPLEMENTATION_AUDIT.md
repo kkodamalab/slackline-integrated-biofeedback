@@ -30,3 +30,11 @@
 ## 手動検証が必要な範囲
 
 自動テストでは、状態遷移、変換処理、設定のシリアライズ、DOM接続、ソースルーティングの契約、全描画経路における顔ランドマークの非表示を検証しています。実際のPC/スマートフォンカメラ、PeerJSネットワーク、QRスキャン、MediaPipe GPU/WASMの挙動、人物Segmentationの品質、AudioContextの出力、Speech Synthesis、録画、ブラウザ固有のパフォーマンスについては、引き続き実機および実ブラウザでの手動検証が必要です。
+
+## マージ前最終修正でのVBF UI比較
+
+参照元VBFリポジトリについて、Git Clone、GitHub Contents API、Raw URL、Web検索の各経路で取得を再試行しました。しかし、この実行環境ではGitHubへのCONNECTがHTTP 403、Web/API経路がHTTP 401となり、参照元の`src/dashboard.js`を含む最新ファイルを直接取得できませんでした。このため、取得できていない最新ファイルを確認済みとは扱わず、上流UIの完全移植が完了したとは報告しません。
+
+一方、このリポジトリのGit履歴（コミット`74c35a0`）には、VBF Motion Lab由来の`lab.html`、`src/lab.css`、`src/styles.css`が保存されていました。今回の修正では、そこに含まれる`dual-stage`、`lab-camera`、`lab-viewport`、`camera-values`、`control-grid`、`control-card`、`field-grid`、`feedback-taxonomy`、`toggle-row`、`target-card`という実際のHTML/CSS構造を統合画面へ戻しました。従来の独自`settings-grid`は削除し、Measurement、Feedback、Target / ReferenceをVBFの番号付きControl Card構成へ整理しました。Slackline固有のGraph、Background、Relative Phase、Body Axis設定は、その基本階層の後段に追加しています。
+
+背景処理は、PC Cameraでは既存のPose推論結果が持つSegmentation Maskを利用します。Device 1 / Device 2ではスマートフォンから受信した未加工映像をPCホスト側のPose Landmarkerへ入力し、計測用として受信済みの33ランドマークには置き換えず、背景合成用のMaskだけを生成します。リモート映像の追加推論は最大幅384px、カメラごとに120ms以上の間隔へ制限し、2台同時利用時の負荷を抑えています。これらはコードと自動テストで経路を確認していますが、実機でのSegmentation品質と性能は未検証です。
