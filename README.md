@@ -15,9 +15,12 @@
 
 HTTPSまたはローカルHTTPサーバーで配信してください。MediaPipe、モデル、PeerJSはCDNから取得します。スマートフォン2台の実機接続、カメラ権限、ブラウザごとのMediaPipe実行はこの環境では未検証です。接続先Peerが存在しない場合やCDN取得失敗時は画面にエラーを表示し、模擬データと実測データを混在させません。
 
-## 公開
+## 開発・公開フロー
 
-公開作業は `PUBLISH.cmd` を通常のWindowsユーザーで実行します。スクリプトはmainブランチ、未コミット変更、fast-forward可否、配布ファイル、バックアップ、SHA-256を確認してから通常の `git push origin main` を行います。Codex環境からGit操作は実行しません。
+1. Codex Cloudで実装・テストします。
+2. GitHub Pull Requestで変更内容をレビューします。
+3. PR承認後にmainへマージします。
+4. 既存のGitHub Pages公開設定を維持します。
 
 ## 検証
 
