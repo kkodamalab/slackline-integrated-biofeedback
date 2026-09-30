@@ -79,7 +79,10 @@ async function start() {
     conn = peer.connect(target, { reliable: false, metadata: { source, sessionId } });
     conn.on("data", message => {
       if (message.type !== "feedback") return;
-      root.classList.toggle("feedback-suppressed", !message.visible); feedbackReadout.hidden=!message.visible; feedbackReadout.textContent=message.visible?`${Number(message.value).toFixed(1)}° / TARGET ${message.target}°`:"";
+      const numericEnabled = !Array.isArray(message.how) || message.how.includes("numeric");
+      const show = message.visible && numericEnabled;
+      root.classList.toggle("feedback-suppressed", !message.visible); feedbackReadout.hidden=!show;
+      feedbackReadout.textContent=show?`${Number.isFinite(message.value) ? Number(message.value).toFixed(1) + "°" : "—"} / TARGET ${message.target}°`:"";
       if (!message.visible) canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
     });
     conn.on("open", () => {
@@ -131,4 +134,3 @@ $("#fullBody").addEventListener("change", e => root.classList.toggle("full-body"
 root.classList.add("full-body");
 $("#startCapture").addEventListener("click", start);
 cameras(); navigator.mediaDevices?.addEventListener("devicechange", cameras);
-

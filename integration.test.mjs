@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 const html=fs.readFileSync('index.html','utf8'), app=fs.readFileSync('app.js','utf8'), runtime=fs.readFileSync('camera-runtime.js','utf8');
+const feedbackHtml=fs.readFileSync('feedback.html','utf8'), feedbackApp=fs.readFileSync('feedback.js','utf8');
 const ids=new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(x=>x[1]));
 const referenced=[...app.matchAll(/\$\('([^']+)'\)/g)].map(x=>x[1]);
 assert.deepEqual([...new Set(referenced.filter(id=>!ids.has(id)))],[], 'app.js references a missing DOM id');
@@ -12,4 +13,8 @@ assert.match(app,/setVideoPresence\(slot,true\)/, 'remote video playback must cl
 assert.match(runtime,/this\.onVideo\(id,true\)/, 'local video playback must clear waiting state');
 assert.match(app,/terminalResult = mean \?\? Number\.NaN/, 'terminal result must persist, including unavailable result');
 assert.match(app,/circularMeanDegrees\(valid\)/, 'terminal result must use circular mean');
+assert(html.indexOf('phase-monitor') < html.indexOf('experiment panel'), 'research monitor must precede settings');
+assert.match(html,/id="how"[\s\S]*type="checkbox"/, 'HOW must use checkboxes');
+assert.match(app,/new BroadcastChannel\('slackline-feedback-v1'\)/); assert.match(feedbackApp,/BroadcastChannel\('slackline-feedback-v1'\)/);
+assert.match(feedbackHtml,/id="cameraWrap"/); assert.match(app,/rawLeftWristY/); assert.match(app,/filteredLeftWristY/);
 console.log('integration tests passed: DOM ids, camera controls, video presence, A-only phase, terminal persistence');
