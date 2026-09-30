@@ -1,6 +1,17 @@
 const TAU = Math.PI * 2;
 export const wrapDegrees = value => ((value + 180) % 360 + 360) % 360 - 180;
 
+/** Mean direction in degrees. Returns null when no finite observations exist. */
+export function circularMeanDegrees(values) {
+  const clean = values.filter(Number.isFinite);
+  if (!clean.length) return null;
+  const radians = clean.map(value => value * Math.PI / 180);
+  const sine = radians.reduce((sum, value) => sum + Math.sin(value), 0);
+  const cosine = radians.reduce((sum, value) => sum + Math.cos(value), 0);
+  if (Math.hypot(sine, cosine) < Number.EPSILON) return null;
+  return wrapDegrees(Math.atan2(sine, cosine) * 180 / Math.PI);
+}
+
 function interpolate(samples, start, step, count) {
   let j = 0;
   return Array.from({ length: count }, (_, i) => {
@@ -49,6 +60,6 @@ export function relativePhase(observations, options = {}) {
   // The FFT Hilbert estimate wraps at both window edges. Use a short circular
   // mean just inside the newest edge while retaining the full series for plots.
   const stable = degrees.slice(Math.max(0, count - 30), Math.max(1, count - 8));
-  const value = Math.atan2(stable.reduce((s,x)=>s+Math.sin(x*Math.PI/180),0),stable.reduce((s,x)=>s+Math.cos(x*Math.PI/180),0))*180/Math.PI;
+  const value = circularMeanDegrees(stable);
   return { valid: true, value, degrees, left, right, times: left.map((_, i) => start + i * step), sampleInterval: step };
 }

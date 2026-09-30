@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const html = fs.readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+const source = fs.readFileSync(new URL('./app.js', import.meta.url), 'utf8');
+const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]));
+const literalReferences = [...source.matchAll(/\$\('([^']+)'\)/g)].map(match => match[1]);
+const missing = [...new Set(literalReferences.filter(id => !ids.has(id)))];
+assert.deepEqual(missing, [], `Missing HTML IDs: ${missing.join(', ')}`);
+assert(!ids.has('chart'), 'obsolete chart element must not return');
+assert(ids.has('phaseChart'));
+console.log(`ID reference test passed: ${literalReferences.length} references, ${ids.size} IDs`);

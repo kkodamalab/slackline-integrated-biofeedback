@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import { drawPhaseChart, renderPhaseGauge } from './phase-view.mjs';
+const attributes = {};
+const meter = { setAttribute: (key, value) => { attributes[key] = value; } };
+const valueElement = { textContent: '', closest: () => meter };
+const needleElement = { style: {}, hidden: false };
+renderPhaseGauge({ valueElement, needleElement, phase: { valid: true, value: -90 } });
+assert.equal(valueElement.textContent, '-90.0°');
+assert.equal(needleElement.style.transform, 'rotate(-90deg)');
+renderPhaseGauge({ valueElement, needleElement, phase: { valid: false } });
+assert.equal(valueElement.textContent, '—');
+assert.equal(needleElement.hidden, true);
+const calls = [];
+const context = new Proxy({}, { get: (_, key) => (...args) => calls.push([key, ...args]), set: () => true });
+const canvas = { clientWidth: 100, clientHeight: 50, getContext: () => context };
+drawPhaseChart(canvas, [{ leftWristY: .4 }, { leftWristY: .5, relativePhase: 10 }], 1);
+assert(calls.some(([name]) => name === 'stroke'));
+console.log('phase view tests passed');
