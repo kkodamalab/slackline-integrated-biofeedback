@@ -1,6 +1,17 @@
 const TAU = Math.PI * 2;
 export const wrapDegrees = value => ((value + 180) % 360 + 360) % 360 - 180;
 
+/** Return a direction mean and reject samples whose resultant direction is weak. */
+export function circularMeanDegrees(values, minimumResultant = 0.2) {
+  const clean = values.filter(Number.isFinite);
+  if (!clean.length) return null;
+  const sin = clean.reduce((sum, value) => sum + Math.sin(value * Math.PI / 180), 0);
+  const cos = clean.reduce((sum, value) => sum + Math.cos(value * Math.PI / 180), 0);
+  const resultant = Math.hypot(sin, cos) / clean.length;
+  if (resultant < minimumResultant) return null;
+  return wrapDegrees(Math.atan2(sin, cos) * 180 / Math.PI);
+}
+
 function interpolate(samples, start, step, count) {
   let j = 0;
   return Array.from({ length: count }, (_, i) => {

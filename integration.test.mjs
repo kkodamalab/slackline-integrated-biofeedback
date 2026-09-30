@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const html=fs.readFileSync('index.html','utf8'), app=fs.readFileSync('app.js','utf8'), runtime=fs.readFileSync('camera-runtime.js','utf8');
+const ids=new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(x=>x[1]));
+const referenced=[...app.matchAll(/\$\('([^']+)'\)/g)].map(x=>x[1]);
+assert.deepEqual([...new Set(referenced.filter(id=>!ids.has(id)))],[], 'app.js references a missing DOM id');
+for(const camera of ['A','B']) for(const control of ['Video','Axis','Skeleton']) assert(ids.has(`camera${camera}${control}`));
+for(const id of ['cameraAEnabled','cameraBEnabled','phaseGauge','phaseTarget','phaseTolerance','phaseChart']) assert(ids.has(id));
+assert.match(app,/cameraPhaseObservation\(time, measures\.A\)/, 'phase must use camera A only');
+assert.doesNotMatch(app,/measures\.A\.missing\s*\?\s*measures\.B/, 'phase must not fall back to B');
+assert.match(app,/setVideoPresence\(slot,true\)/, 'remote video playback must clear waiting state');
+assert.match(runtime,/this\.onVideo\(id,true\)/, 'local video playback must clear waiting state');
+assert.match(app,/terminalResult = mean \?\? Number\.NaN/, 'terminal result must persist, including unavailable result');
+assert.match(app,/circularMeanDegrees\(valid\)/, 'terminal result must use circular mean');
+console.log('integration tests passed: DOM ids, camera controls, video presence, A-only phase, terminal persistence');
