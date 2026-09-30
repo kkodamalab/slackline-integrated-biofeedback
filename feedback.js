@@ -1,5 +1,6 @@
 import { gaugePercent, normalizeHow, visualizationVisibility } from './feedback-state.mjs';
 import { participantPresentation } from './display-settings.mjs';
+import { targetToleranceSegments } from './target-feedback.mjs';
 const $=id=>document.getElementById(id);
 
 function drawHistory(rows,key,min,max,colors={}) {
@@ -20,13 +21,13 @@ export function renderFeedback(state) {
   show('numeric','numeric'); show('waveform','waveform'); $('gaugeBlock').hidden=!visual.gauge; show('targetText','target');
   const min=state.range?.min??-180,max=state.range?.max??180,unit=state.unit||'',decimals=unit==='°'?1:3;
   $('numeric').textContent=Number.isFinite(state.value)?`${state.value.toFixed(decimals)}${unit}`:'—';
-  const value=gaugePercent(state.value,min,max), target=gaugePercent(state.target,min,max), half=Math.max(0,Math.min(50,state.tolerance/(max-min)*100));
+  const value=gaugePercent(state.value,min,max), target=gaugePercent(state.target,min,max), segments=targetToleranceSegments(state.targetVariable,state.target,state.tolerance);
   $('needle').hidden=value===null; if(value!==null)$('needle').style.left=value+'%'; $('target').style.left=target+'%';
-  $('tolerance').style.left=Math.max(0,target-half)+'%'; $('tolerance').style.width=Math.min(100-Math.max(0,target-half),half*2)+'%';
+  for(const [index,id] of ['tolerance','toleranceWrap'].entries()){const element=$(id),segment=segments[index];element.hidden=!segment;if(segment){element.style.left=segment.left+'%';element.style.width=segment.width+'%'}}
   $('scaleMin').textContent=`${min}${unit}`;$('scaleMid').textContent=`${(min+max)/2}${unit}`;$('scaleMax').textContent=`${max}${unit}`;
   $('targetText').textContent=`${state.targetLabel||state.targetVariable}: target ${state.target}${unit} / tolerance ±${state.tolerance}${unit}`;
   const onTarget=state.inside===true;
-  $('needle').style.background=presentation.overlayStyle.gaugeColor||'#f3c969'; $('tolerance').style.background=(presentation.overlayStyle.targetRangeColor||'#b8ff32')+'40';
+  $('needle').style.background=presentation.overlayStyle.gaugeColor||'#f3c969'; for(const id of ['tolerance','toleranceWrap'])$(id).style.background=(presentation.overlayStyle.targetRangeColor||'#b8ff32')+'40';
   $('result').textContent=onTarget?'TARGET':' '; drawHistory(state.history||[],state.targetVariable,min,max,presentation.overlayStyle);
 }
 const channel='BroadcastChannel'in window?new BroadcastChannel('slackline-feedback-v1'):null; channel?.addEventListener('message',event=>renderFeedback(event.data));

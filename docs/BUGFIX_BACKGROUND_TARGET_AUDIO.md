@@ -21,3 +21,14 @@
 ## 手動検証範囲
 
 自動テストではMask合成順序とFloat32 Alpha変換、Target別Range / Unit / Circular判定、Participant State、Enter / Exit / Outside / Cooldown / Concurrent / Terminal / No BF / Invalid、視覚Targetからの独立、DOM接続を検証します。PC Camera、Device 1 / Device 2、実際のMediaPipe Mask品質、2台同時性能、AudioContextの実音、Speech Synthesisは実機・実ブラウザでの確認が必要です。
+
+## PR #11レビュー後の追加修正
+
+- Hand / Footを選択した場合、TargetとToleranceの入力欄から角度単位を除去し、変数メタデータのUnit、Range、Stepを入力欄・Gauge・Waveform・Participant Viewへ共通反映するようにしました。
+- Relative PhaseのTarget Rangeを円環区間として計算し、179°±5°のように-180°境界をまたぐ場合はGaugeの左右端に2つの許容範囲を描画します。到達判定と表示は同じTarget Metadataを使用します。
+- Beep出力はAudioContextが`running`の場合だけ成功として記録します。`suspended`、`closed`、Resume失敗、出力Node生成失敗では最終Beep時刻を更新せず、DEBUGのAudioContext欄へ英語の理由を表示します。
+- Float32 Segmentation Mask、PC Camera Mask、Device 1 / Device 2のホスト側Segmentation、OriginalへのFallbackは維持しています。
+
+### mainとの競合解消について
+
+最新mainの取得を`git fetch origin main`で試みましたが、実行環境のGitHub CONNECT TunnelがHTTP 403を返しました。また、この作業Checkoutには`main`参照や`origin/main`が含まれていません。そのため、GitHub上の実際の最新mainを取り込んだMerge / Rebaseと、`mergeable_state=dirty`解消の確認はこの環境では実行できていません。PR #10を含むとされる未取得のmainに対して競合解消済みとは報告しません。

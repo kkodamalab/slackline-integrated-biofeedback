@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';import{BEEP_TYPES,auditoryDecision,resolvePhrase}from'./auditory-feedback.mjs';
+import assert from 'node:assert/strict';import{audioError,auditoryDecision,BEEP_TYPES,playBeep,resetAudioForTest,resolvePhrase,resumeAudio}from'./auditory-feedback.mjs';
 assert.deepEqual(BEEP_TYPES,['high','low','double','soft-chime','alert']);
 const base={enabled:true,when:'concurrent',trigger:'enter',cooldown:1000},ctx={recording:true,terminal:false,previousOnTarget:false,onTarget:true,now:2000};
 assert.equal(auditoryDecision(base,ctx,0),true);assert.equal(auditoryDecision(base,ctx,1500),false);
@@ -14,3 +14,7 @@ assert.equal(auditoryDecision({...base,when:'terminal',trigger:'exit'},{...ctx,r
 assert.equal(auditoryDecision(base,{...ctx,onTarget:null},0),false,'missing target values must never trigger audio');
 const voice={...base,cooldown:2000};assert.equal(auditoryDecision(voice,ctx,500),false);assert.equal(auditoryDecision(voice,ctx,-1),true);
 assert.equal(resolvePhrase('custom',' よし '),'よし');assert.equal(resolvePhrase('OK','ignored'),'OK');console.log('auditory feedback tests passed: five types, triggers, timing and cooldown');
+class FakeAudioContext{constructor(){this.state='suspended';this.currentTime=0;this.destination={}}resume(){return Promise.resolve()}createOscillator(){return{type:'',frequency:{value:0},connect(node){return node},start(){},stop(){}}}createGain(){return{gain:{setValueAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){return this}}}}
+resetAudioForTest();assert.equal(playBeep('high',.5,FakeAudioContext),false,'suspended context is not successful output');assert.match(audioError(),/suspended/);
+resetAudioForTest();class RunningAudioContext extends FakeAudioContext{constructor(){super();this.state='running'}}assert(await resumeAudio(RunningAudioContext));assert.equal(playBeep('high',.5,RunningAudioContext),true,'running context schedules output');
+resetAudioForTest();assert.equal(await resumeAudio(FakeAudioContext),null,'resume that leaves context suspended is not ready');assert.match(audioError(),/suspended/);

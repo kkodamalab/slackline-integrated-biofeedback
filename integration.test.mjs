@@ -31,7 +31,7 @@ assert.match(capture,/l\.slice\(11\)/, 'legacy capture preview must suppress fac
 assert.match(remotePose,/if\(i<11/, 'remote capture preview must suppress face landmarks');
 assert.match(remotePose,/if\(start<11\|\|end<11\)/, 'remote capture connections must suppress face landmarks');
 for(const id of ['yAxisMode','yAutoRange','yMin','yMax','relativeBaseline','graphWarning'])assert(ids.has(id));
-for(const id of ['targetChart','targetMonitorTitle','gaugeMin','gaugeMax','debugTargetVariable','debugInside','debugAudio','debugSegmentation','backgroundStatusA','backgroundStatusB'])assert(ids.has(id));
+for(const id of ['targetChart','targetMonitorTitle','gaugeMin','gaugeMax','phaseToleranceWrap','targetUnit','toleranceUnit','debugTargetVariable','debugInside','debugAudio','debugSegmentation','backgroundStatusA','backgroundStatusB'])assert(ids.has(id));
 for(const source of ['pc','device1','device2'])assert.match(html,new RegExp(`option value="${source}"`));
 for(const camera of ['A','B'])for(const setting of ['backgroundMode','backgroundBlur','backgroundColor'])assert(ids.has(`${setting}${camera}`));
 assert.match(app,/Choose another source for either camera/, 'duplicate PC camera choice must warn instead of silently changing the selection');
