@@ -40,6 +40,20 @@ function analyticPhase(values) {
   });
 }
 
+/**
+ * Causal one-pole low-pass for uniformly resampled values.  The caller keeps
+ * the raw series; this function always returns a new array.
+ */
+export function lowPass(values, sampleIntervalMs, cutoffHz) {
+  if (!values.every(Number.isFinite) || !Number.isFinite(sampleIntervalMs) || sampleIntervalMs <= 0) return null;
+  const sampleRate = 1000 / sampleIntervalMs;
+  if (!Number.isFinite(cutoffHz) || cutoffHz <= 0 || cutoffHz >= sampleRate / 2) return null;
+  const dt = sampleIntervalMs / 1000, rc = 1 / (TAU * cutoffHz), alpha = dt / (rc + dt);
+  const result = [values[0]];
+  for (let i = 1; i < values.length; i++) result.push(result[i - 1] + alpha * (values[i] - result[i - 1]));
+  return result;
+}
+
 /** Resample irregular, monotonic observations before a discrete Hilbert transform. */
 export function relativePhase(observations, options = {}) {
   const minSamples = options.minSamples ?? 32, minAmplitude = options.minAmplitude ?? 0.015;
@@ -51,8 +65,14 @@ export function relativePhase(observations, options = {}) {
   const count = Math.min(256, Math.floor((clean.at(-1).time - clean[0].time) / step) + 1);
   if (count < minSamples) return { valid: false, reason: '解析窓が短すぎます' };
   const start = clean.at(-1).time - step * (count - 1);
-  const left = interpolate(clean.map(x => ({ time: x.time, value: x.left })), start, step, count);
-  const right = interpolate(clean.map(x => ({ time: x.time, value: x.right })), start, step, count);
+  const rawLeft = interpolate(clean.map(x => ({ time: x.time, value: x.left })), start, step, count);
+  const rawRight = interpolate(clean.map(x => ({ time: x.time, value: x.right })), start, step, count);
+  let left = rawLeft, right = rawRight, filterReason = '';
+  if (options.lowPass) {
+    const filteredLeft = lowPass(rawLeft, step, options.cutoffHz), filteredRight = lowPass(rawRight, step, options.cutoffHz);
+    if (filteredLeft && filteredRight) { left = filteredLeft; right = filteredRight; }
+    else filterReason = 'カットオフ周波数がNyquist範囲外のためraw信号を使用';
+  }
   const amplitude = values => Math.sqrt(values.reduce((s, x) => s + (x - values.reduce((a,b)=>a+b,0)/values.length) ** 2, 0) / values.length);
   if (amplitude(left) < minAmplitude || amplitude(right) < minAmplitude) return { valid: false, reason: '運動振幅が不足しています' };
   const lp = analyticPhase(left), rp = analyticPhase(right);
@@ -61,5 +81,5 @@ export function relativePhase(observations, options = {}) {
   // mean just inside the newest edge while retaining the full series for plots.
   const stable = degrees.slice(Math.max(0, count - 30), Math.max(1, count - 8));
   const value = Math.atan2(stable.reduce((s,x)=>s+Math.sin(x*Math.PI/180),0),stable.reduce((s,x)=>s+Math.cos(x*Math.PI/180),0))*180/Math.PI;
-  return { valid: true, value, degrees, left, right, times: left.map((_, i) => start + i * step), sampleInterval: step };
+  return { valid: true, value, degrees, left, right, rawLeft, rawRight, filtered: !!options.lowPass && !filterReason, filterReason, cutoffHz: options.lowPass ? options.cutoffHz : null, nyquistHz: 500 / step, times: left.map((_, i) => start + i * step), sampleInterval: step };
 }

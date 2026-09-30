@@ -4,6 +4,7 @@ import { storeRemote, currentRemote } from './remote-state.mjs';
 import { measurePose } from './measurements.mjs';
 import { circularMeanDegrees, relativePhase, wrapDegrees } from './phase.mjs';
 import { appendBounded, cameraPhaseObservation, participantFeedbackVisible } from './monitor-state.mjs';
+import { gaugePercent, normalizeHow, participantState } from './feedback-state.mjs';
 import './qr-init.js';
 
 const $ = id => document.getElementById(id);
@@ -12,14 +13,17 @@ const sessionId = crypto.randomUUID();
 const state = {
   mode: 'idle', looping: false, recording: false, samples: [], phaseWindow: [], displayHistory: [],
   runtime: null, remote: { A: null, B: null }, connections: {}, previous: { A: null, B: null },
-  trialStarted: null, terminalResult: null
+  trialStarted: null, terminalResult: null, lastFeedbackPublish: 0
 };
+const feedbackChannel = 'BroadcastChannel' in window ? new BroadcastChannel('slackline-feedback-v1') : null;
 const edges = [[11,12],[23,24],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,25],[25,27],[24,26],[26,28]];
 const settings = () => ({
-  when: $('when').value, what: $('what').value, amount: $('amount').value, how: $('how').value,
+  when: $('when').value, what: $('what').value, amount: $('amount').value,
+  how: normalizeHow([...document.querySelectorAll('#how input:checked')].map(x => x.value)),
   variables: [...document.querySelectorAll('#variables input:checked')].map(x => x.value), side: $('side').value,
   target: Number($('target').value), tolerance: Number($('tolerance').value), sourceA: $('sourceA').value,
-  sourceB: $('sourceB').value, cameraAEnabled: $('cameraAEnabled').checked, cameraBEnabled: $('cameraBEnabled').checked
+  sourceB: $('sourceB').value, cameraAEnabled: $('cameraAEnabled').checked, cameraBEnabled: $('cameraBEnabled').checked,
+  cameraImageEnabled: $('feedbackCamera').checked, filter: { enabled: $('lowPassEnabled').checked, cutoffHz: Number($('lowPassCutoff').value) }
 });
 const message = text => { $('notice').textContent = text; };
 const midpoint = (a, b) => a && b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : null;
@@ -77,26 +81,31 @@ function chart() {
 }
 
 function updateResearchMonitor(phase) {
-  const s = settings(), targetPercent = (wrapDegrees(s.target) + 180) / 360 * 100, tolerancePercent = Math.min(50, Math.max(0, s.tolerance / 360 * 100));
+  const s = settings(), targetPercent = gaugePercent(s.target), tolerancePercent = Math.min(50, Math.max(0, s.tolerance / 360 * 100));
   $('phaseTarget').style.left = targetPercent + '%'; $('phaseTolerance').style.left = Math.max(0, targetPercent - tolerancePercent) + '%';
   $('phaseTolerance').style.width = Math.min(100 - Math.max(0, targetPercent - tolerancePercent), tolerancePercent * 2) + '%';
   $('phaseTargetLabel').textContent = `${s.target}°`; $('phaseToleranceLabel').textContent = `${s.tolerance}°`;
   $('monitorPhaseValue').textContent = phase.valid ? `${phase.value.toFixed(1)}°` : '—'; $('phaseNeedle').hidden = !phase.valid;
-  if (phase.valid) $('phaseNeedle').style.left = (phase.value + 180) / 360 * 100 + '%';
+  if (phase.valid) $('phaseNeedle').style.left = gaugePercent(phase.value) + '%';
   $('phaseGauge').setAttribute('aria-valuenow', phase.valid ? phase.value.toFixed(1) : '');
 }
 
-function feedback(phase, measurement) {
-  const s = settings(), visible = participantFeedbackVisible(s.when, state.recording, state.terminalResult);
-  $('feedback').hidden = !visible;
-  if (s.when === 'concurrent' && state.recording) {
-    $('phaseValue').textContent = phase.valid ? `${phase.value.toFixed(1)}°` : '—';
-    $('detail').textContent = s.amount === 'detailed' && phase.valid ? `目標 ${s.target}° / 誤差 ${wrapDegrees(phase.value - s.target).toFixed(1)}° / 信頼性 ${(measurement.confidence ?? 0).toFixed(2)}` : '';
-    if (phase.valid) message(Math.abs(wrapDegrees(phase.value - s.target)) <= s.tolerance ? '目標範囲内' : '目標範囲外');
-  }
-  $('feedbackTitle').textContent = s.what === 'kr' ? '結果（相対位相）' : '過程（左右手の協調）';
-  document.querySelector('.depth-dial')?.classList.toggle('compact', s.how !== 'gauge');
-  for (const connection of Object.values(state.connections)) if (connection?.open) connection.send({ type: 'feedback', visible, value: phase.valid ? phase.value : null, target: s.target, tolerance: s.tolerance, what: s.what, amount: s.amount, how: s.how });
+function cameraSnapshot() {
+  if (!$('feedbackCamera').checked || !$('videoA').videoWidth) return null;
+  const canvas = document.createElement('canvas'); canvas.width = 480; canvas.height = Math.round(480 * $('videoA').videoHeight / $('videoA').videoWidth);
+  canvas.getContext('2d').drawImage($('videoA'), 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', .65);
+}
+
+function publishFeedback(phase, force = false) {
+  const now = performance.now(); if (!force && now - state.lastFeedbackPublish < 200) return;
+  state.lastFeedbackPublish = now;
+  const s = settings(), payload = participantState(s, state.recording, state.terminalResult, phase, state.displayHistory, cameraSnapshot());
+  payload.skeletonImage = s.how.includes('skeleton') ? $('canvasA').toDataURL('image/png') : null;
+  feedbackChannel?.postMessage(payload);
+  try { localStorage.setItem('slackline-feedback-state', JSON.stringify(payload)); } catch {}
+  // Keep the established Smartphone message contract, now driven by the same state.
+  for (const connection of Object.values(state.connections)) if (connection?.open) connection.send({ ...payload, type: 'feedback' });
 }
 
 function frame(time) {
@@ -107,29 +116,32 @@ function frame(time) {
     if (!measures[id].missing) state.previous[id] = measures[id]; $('readout' + id).textContent = inputs[id].landmarks ? '検出' : '未検出';
   }
   appendBounded(state.phaseWindow, cameraPhaseObservation(time, measures.A));
-  const phase = relativePhase(state.phaseWindow), a = measures.A;
+  const s = settings(), phase = relativePhase(state.phaseWindow, { lowPass: s.filter.enabled, cutoffHz: s.filter.cutoffHz }), a = measures.A;
+  $('filterStatus').textContent = phase.filterReason ? `${phase.filterReason} (Nyquist ${phase.nyquistHz.toFixed(1)} Hz)` : s.filter.enabled && phase.valid ? `適用中 (Nyquist ${phase.nyquistHz.toFixed(1)} Hz)` : 'resampling後・Hilbert変換前に適用';
   appendBounded(state.displayHistory, { leftWristY: a.leftWristY, rightWristY: a.rightWristY, relativePhase: phase.valid ? phase.value : null });
   $('trunkValue').textContent = a.bodyAxisHead == null ? '—' : a.bodyAxisHead.toFixed(1) + '°'; $('kneeValue').textContent = measures.B.leftKnee == null ? '—' : measures.B.leftKnee.toFixed(1) + '°';
   $('confValue').textContent = a.confidence == null ? '—' : a.confidence.toFixed(2); $('syncValue').textContent = inputs.A.timestamp && inputs.B.timestamp ? Math.abs(inputs.A.timestamp - inputs.B.timestamp) + ' ms' : '—';
   if (state.recording) {
-    const s = settings(); state.samples.push({ sessionId, trial: $('trial').value, condition: $('condition').value, memo: $('memo').value, wallTime: nowIso(), monotonicTime: time, mode: state.mode, sourceA: s.sourceA, sourceB: s.sourceB, cameraA: inputs.A.meta, cameraB: inputs.B.meta, ...a, relativePhase: phase.valid ? phase.value : null, phaseReason: phase.valid ? '' : phase.reason, missingA: measures.A.missing, missingB: measures.B.missing, freshnessA: inputs.A.receivedAt ? time-inputs.A.receivedAt : null, freshnessB: inputs.B.receivedAt ? time-inputs.B.receivedAt : null, timeDifference: inputs.A.timestamp && inputs.B.timestamp ? inputs.A.timestamp-inputs.B.timestamp : null, bf: s });
+    state.samples.push({ sessionId, trial: $('trial').value, condition: $('condition').value, memo: $('memo').value, wallTime: nowIso(), monotonicTime: time, mode: state.mode, sourceA: s.sourceA, sourceB: s.sourceB, cameraA: inputs.A.meta, cameraB: inputs.B.meta, ...a, rawLeftWristY: a.leftWristY, rawRightWristY: a.rightWristY, filteredLeftWristY: phase.filtered ? phase.left?.at(-1) : null, filteredRightWristY: phase.filtered ? phase.right?.at(-1) : null, relativePhase: phase.valid ? phase.value : null, phaseReason: phase.valid ? '' : phase.reason, missingA: measures.A.missing, missingB: measures.B.missing, freshnessA: inputs.A.receivedAt ? time-inputs.A.receivedAt : null, freshnessB: inputs.B.receivedAt ? time-inputs.B.receivedAt : null, timeDifference: inputs.A.timestamp && inputs.B.timestamp ? inputs.A.timestamp-inputs.B.timestamp : null, bf: s });
     if (state.samples.length > 20000) state.samples.shift();
   }
-  updateResearchMonitor(phase); feedback(phase, a); if (time % 100 < 18) chart(); requestAnimationFrame(frame);
+  updateResearchMonitor(phase); publishFeedback(phase); if (time % 100 < 18) chart(); requestAnimationFrame(frame);
 }
 
 function ensureLoop() { if (!state.looping) { state.looping = true; requestAnimationFrame(frame); } }
 function stopInputs() { state.runtime?.stop(); state.runtime = null; state.looping = false; for (const id of ['A','B']) { draw(id, null); setVideoPresence(id, false); } }
 async function startCams() { stopInputs(); state.mode = 'camera'; state.runtime = new CameraRuntime({ onState: (id,text) => { $(id.toLowerCase()+'State').textContent = text; }, onError: message, onVideo: setVideoPresence, onFrame: (id,lm) => { if (!lm) draw(id,null); } }); if (await state.runtime.start({ A: $('cameraAEnabled').checked, B: $('cameraBEnabled').checked })) ensureLoop(); }
 function startSim() { stopInputs(); state.mode = 'sim'; $('simulationBadge').hidden = false; for (const id of ['A','B']) setVideoPresence(id, true); message('SIMULATION：模擬データは実測値ではありません'); ensureLoop(); }
-function startTrial() { state.samples = []; state.phaseWindow = []; state.recording = true; state.terminalResult = null; state.trialStarted = nowIso(); $('modeStatus').textContent = '計測中'; $('phaseValue').textContent = '—'; ensureLoop(); message('新しい試行を開始しました'); }
-function stopTrial() { state.recording = false; $('modeStatus').textContent = '停止'; if (settings().when === 'terminal') { const valid = state.samples.map(x => x.relativePhase).filter(Number.isFinite), mean = circularMeanDegrees(valid); state.terminalResult = mean ?? Number.NaN; $('feedback').hidden = false; $('phaseValue').textContent = mean == null ? '算出不能' : mean.toFixed(1) + '°'; $('detail').textContent = ''; message(`Terminal KR：試行 ${$('trial').value} / 有効 ${valid.length} samples`); } }
-function reset() { state.recording = false; state.samples = []; state.phaseWindow = []; state.displayHistory = []; state.previous = { A:null, B:null }; state.terminalResult = null; $('phaseValue').textContent = '—'; chart(); message('試行データをリセットしました'); }
+function startTrial() { state.samples = []; state.phaseWindow = []; state.recording = true; state.terminalResult = null; state.trialStarted = nowIso(); $('modeStatus').textContent = '計測中'; ensureLoop(); publishFeedback({valid:false}, true); message('新しい試行を開始しました'); }
+function stopTrial() { state.recording = false; $('modeStatus').textContent = '停止'; if (settings().when === 'terminal') { const valid = state.samples.map(x => x.relativePhase).filter(Number.isFinite), mean = circularMeanDegrees(valid); state.terminalResult = mean ?? Number.NaN; message(`Terminal KR：試行 ${$('trial').value} / 有効 ${valid.length} samples`); } publishFeedback({valid:false}, true); }
+function reset() { state.recording = false; state.samples = []; state.phaseWindow = []; state.displayHistory = []; state.previous = { A:null, B:null }; state.terminalResult = null; chart(); publishFeedback({valid:false}, true); message('試行データをリセットしました'); }
 function download(kind) { const meta = { sessionId, trialStarted: state.trialStarted, exportedAt: nowIso(), settings: settings(), samples: state.samples }; let body,type; if (kind === 'json') { body=JSON.stringify(meta,null,2); type='application/json'; } else { const flat=state.samples.map(x=>({...x,cameraA:JSON.stringify(x.cameraA),cameraB:JSON.stringify(x.cameraB),bf:JSON.stringify(x.bf)})),keys=[...new Set(flat.flatMap(Object.keys))]; body='\ufeff'+keys.join(',')+'\n'+flat.map(row=>keys.map(key=>`"${String(row[key]??'').replaceAll('"','""')}"`).join(',')).join('\n'); type='text/csv'; } const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([body],{type})); a.download=`slackline-${sessionId}-${$('trial').value}.${kind}`; a.click(); URL.revokeObjectURL(a.href); }
 
 $('startCams').onclick=startCams; $('stopAll').onclick=stopInputs; $('startSim').onclick=startSim; $('startTrial').onclick=startTrial; $('stopTrial').onclick=stopTrial; $('resetTrial').onclick=reset; $('downloadCsv').onclick=()=>download('csv'); $('downloadJson').onclick=()=>download('json'); $('fullscreen').onclick=()=>document.documentElement.requestFullscreen?.();
+$('openFeedback').onclick=()=>window.open('./feedback.html', 'slackline-feedback');
 for (const id of ['A','B']) { $('camera'+id+'Video').onchange = () => draw(id, source(id, performance.now()).landmarks); $('camera'+id+'Axis').onchange = $('camera'+id+'Skeleton').onchange = () => ensureLoop(); const video=$('video'+id); video.addEventListener('playing',()=>setVideoPresence(id,true)); video.addEventListener('emptied',()=>setVideoPresence(id,false)); }
-for (const id of ['when','how','target','tolerance']) $(id).onchange=()=>ensureLoop();
+for (const id of ['when','what','amount','target','tolerance','feedbackCamera','lowPassEnabled','lowPassCutoff']) $(id).onchange=()=>{ ensureLoop(); publishFeedback({valid:false}, true); };
+for (const input of document.querySelectorAll('#how input')) input.onchange=()=>{ ensureLoop(); publishFeedback({valid:false}, true); };
 for (const id of ['cameraAEnabled','cameraBEnabled']) $(id).onchange=()=>state.mode === 'camera' ? startCams() : ensureLoop();
 window.addEventListener('error', event => message('JavaScriptエラー: '+event.message)); window.addEventListener('unhandledrejection', event => message('非同期エラー: '+event.reason));
 
