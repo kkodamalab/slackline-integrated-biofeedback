@@ -1,6 +1,18 @@
 const TAU = Math.PI * 2;
 export const wrapDegrees = value => ((value + 180) % 360 + 360) % 360 - 180;
 
+/** Calculate a direction without treating the -180/180 boundary as a discontinuity. */
+export function circularMeanDegrees(values, options = {}) {
+  const clean = values.filter(Number.isFinite);
+  if (!clean.length) return { valid: false, reason: '有効な相対位相がありません', resultantLength: 0 };
+  const sin = clean.reduce((sum, value) => sum + Math.sin(value * Math.PI / 180), 0);
+  const cos = clean.reduce((sum, value) => sum + Math.cos(value * Math.PI / 180), 0);
+  const resultantLength = Math.hypot(sin, cos) / clean.length;
+  const minResultantLength = options.minResultantLength ?? 0.1;
+  if (resultantLength < minResultantLength) return { valid: false, reason: '平均方向が不安定です', resultantLength };
+  return { valid: true, value: wrapDegrees(Math.atan2(sin, cos) * 180 / Math.PI), resultantLength };
+}
+
 function interpolate(samples, start, step, count) {
   let j = 0;
   return Array.from({ length: count }, (_, i) => {
