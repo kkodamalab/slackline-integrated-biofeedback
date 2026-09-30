@@ -1,0 +1,36 @@
+export const BEEP_TYPES = ['high','low','double','soft-chime','alert'];
+
+export function triggerMatches(trigger, previousOnTarget, onTarget) {
+  if (trigger === 'enter') return previousOnTarget === false && onTarget;
+  if (trigger === 'exit') return previousOnTarget === true && !onTarget;
+  return trigger === 'outside' && !onTarget;
+}
+
+export function auditoryDecision(config, context, lastPlayed = -Infinity) {
+  const timingAllowed = config.when === 'concurrent' ? context.recording && !context.terminal
+    : config.when === 'terminal' ? context.terminal === true : false;
+  const cooldown = Math.max(0, Number(config.cooldown) || 0);
+  return timingAllowed && config.enabled && triggerMatches(config.trigger, context.previousOnTarget, context.onTarget)
+    && context.now - lastPlayed >= cooldown;
+}
+
+function tone(context, destination, frequency, start, duration, gainValue, type='sine') {
+  const oscillator=context.createOscillator(), gain=context.createGain(); oscillator.type=type; oscillator.frequency.value=frequency;
+  gain.gain.setValueAtTime(0,start); gain.gain.linearRampToValueAtTime(gainValue,start+.015); gain.gain.exponentialRampToValueAtTime(.0001,start+duration);
+  oscillator.connect(gain).connect(destination); oscillator.start(start); oscillator.stop(start+duration);
+}
+
+export function playBeep(type='high', volume=.5, AudioContextClass=globalThis.AudioContext||globalThis.webkitAudioContext) {
+  if (!AudioContextClass) return false; const context=new AudioContextClass(), now=context.currentTime, gain=Math.max(.0001,Math.min(1,Number(volume)))*.18;
+  if(type==='low') tone(context,context.destination,220,now,.22,gain);
+  else if(type==='double'){tone(context,context.destination,740,now,.1,gain);tone(context,context.destination,740,now+.14,.1,gain)}
+  else if(type==='soft-chime'){tone(context,context.destination,523,now,.45,gain*.7);tone(context,context.destination,784,now+.08,.5,gain*.5)}
+  else if(type==='alert'){tone(context,context.destination,330,now,.15,gain,'square');tone(context,context.destination,660,now+.16,.2,gain,'square')}
+  else tone(context,context.destination,880,now,.16,gain); return true;
+}
+
+export function resolvePhrase(preset, custom) { return preset === 'custom' ? String(custom||'').trim() : preset; }
+export function playVoice(config, speech=globalThis.speechSynthesis, Utterance=globalThis.SpeechSynthesisUtterance) {
+  const phrase=resolvePhrase(config.phrase,config.customPhrase); if(!speech||!Utterance||!phrase)return false;
+  const utterance=new Utterance(phrase); utterance.lang='ja-JP'; utterance.volume=Math.max(0,Math.min(1,Number(config.volume))); utterance.rate=Math.max(.5,Math.min(2,Number(config.rate))); speech.speak(utterance); return true;
+}
