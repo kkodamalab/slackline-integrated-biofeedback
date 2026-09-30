@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import { appendPhaseHistory, appendTrialSample, beginTrial, createTrialState, endTrial, resetTrialState } from './trial-state.mjs';
+
+const state = createTrialState({ historyLimit: 3, sampleLimit: 2 });
+for (let value = 1; value <= 4; value++) appendPhaseHistory(state, { value });
+assert.deepEqual(state.phaseHistory.map(x => x.value), [2, 3, 4]);
+assert.equal(appendTrialSample(state, { value: 'before' }), false);
+beginTrial(state, 'start');
+appendTrialSample(state, { value: 1 });
+appendPhaseHistory(state, { value: 5 });
+appendTrialSample(state, { value: 2 });
+appendTrialSample(state, { value: 3 });
+assert.deepEqual(state.samples.map(x => x.value), [2, 3]);
+assert.deepEqual(state.phaseHistory.map(x => x.value), [3, 4, 5]);
+endTrial(state);
+assert.equal(appendTrialSample(state, { value: 'after' }), false);
+beginTrial(state, 'next');
+assert.deepEqual(state.samples, []);
+assert.equal(state.phaseHistory.length, 3, 'starting a trial must preserve display history');
+resetTrialState(state);
+assert.deepEqual(state.samples, []);
+assert.deepEqual(state.phaseHistory, []);
+console.log('trial state tests passed');
