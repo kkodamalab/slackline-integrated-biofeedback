@@ -58,12 +58,12 @@ export function lowPass(values, sampleIntervalMs, cutoffHz) {
 export function relativePhase(observations, options = {}) {
   const minSamples = options.minSamples ?? 32, minAmplitude = options.minAmplitude ?? 0.015;
   const clean = observations.filter(x => Number.isFinite(x.time) && Number.isFinite(x.left) && Number.isFinite(x.right)).sort((a, b) => a.time - b.time);
-  if (clean.length < minSamples || clean.length / Math.max(1, observations.length) < 0.7) return { valid: false, reason: clean.length < minSamples ? '解析窓が短すぎます' : '欠損が多すぎます' };
+  if (clean.length < minSamples || clean.length / Math.max(1, observations.length) < 0.7) return { valid: false, reason: clean.length < minSamples ? 'Analysis window is too short' : 'Too many samples are missing' };
   const intervals = clean.slice(1).map((x, i) => x.time - clean[i].time).filter(x => x > 0).sort((a, b) => a - b);
   const step = intervals[Math.floor(intervals.length / 2)];
-  if (!step) return { valid: false, reason: '時刻情報が不正です' };
+  if (!step) return { valid: false, reason: 'Invalid timestamps' };
   const count = Math.min(256, Math.floor((clean.at(-1).time - clean[0].time) / step) + 1);
-  if (count < minSamples) return { valid: false, reason: '解析窓が短すぎます' };
+  if (count < minSamples) return { valid: false, reason: 'Analysis window is too short' };
   const start = clean.at(-1).time - step * (count - 1);
   const rawLeft = interpolate(clean.map(x => ({ time: x.time, value: x.left })), start, step, count);
   const rawRight = interpolate(clean.map(x => ({ time: x.time, value: x.right })), start, step, count);
@@ -71,10 +71,10 @@ export function relativePhase(observations, options = {}) {
   if (options.lowPass) {
     const filteredLeft = lowPass(rawLeft, step, options.cutoffHz), filteredRight = lowPass(rawRight, step, options.cutoffHz);
     if (filteredLeft && filteredRight) { left = filteredLeft; right = filteredRight; }
-    else filterReason = 'カットオフ周波数がNyquist範囲外のためraw信号を使用';
+    else filterReason = 'Cutoff is outside the Nyquist range; using the raw signal';
   }
   const amplitude = values => Math.sqrt(values.reduce((s, x) => s + (x - values.reduce((a,b)=>a+b,0)/values.length) ** 2, 0) / values.length);
-  if (amplitude(left) < minAmplitude || amplitude(right) < minAmplitude) return { valid: false, reason: '運動振幅が不足しています' };
+  if (amplitude(left) < minAmplitude || amplitude(right) < minAmplitude) return { valid: false, reason: 'Movement amplitude is insufficient' };
   const lp = analyticPhase(left), rp = analyticPhase(right);
   const degrees = lp.map((x, i) => wrapDegrees((x - rp[i]) * 180 / Math.PI));
   // The FFT Hilbert estimate wraps at both window edges. Use a short circular
