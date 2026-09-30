@@ -31,6 +31,7 @@ assert.match(capture,/l\.slice\(11\)/, 'legacy capture preview must suppress fac
 assert.match(remotePose,/if\(i<11/, 'remote capture preview must suppress face landmarks');
 assert.match(remotePose,/if\(start<11\|\|end<11\)/, 'remote capture connections must suppress face landmarks');
 for(const id of ['yAxisMode','yAutoRange','yMin','yMax','relativeBaseline','graphWarning'])assert(ids.has(id));
+for(const id of ['targetChart','targetMonitorTitle','gaugeMin','gaugeMax','phaseToleranceWrap','targetUnit','toleranceUnit','debugTargetVariable','debugInside','debugAudio','debugSegmentation','backgroundStatusA','backgroundStatusB'])assert(ids.has(id));
 for(const source of ['pc','device1','device2'])assert.match(html,new RegExp(`option value="${source}"`));
 for(const camera of ['A','B'])for(const setting of ['backgroundMode','backgroundBlur','backgroundColor'])assert(ids.has(`${setting}${camera}`));
 assert.match(app,/Choose another source for either camera/, 'duplicate PC camera choice must warn instead of silently changing the selection');
@@ -38,6 +39,8 @@ assert.match(app,/segmentExternal\(id,\$\('video'\+id\),time\)/, 'remote Device 
 assert.match(runtime,/Math\.min\(384,video\.videoWidth\)/, 'remote segmentation must use a bounded processing resolution');
 assert.match(runtime,/minimumInterval=120/, 'remote segmentation must be throttled for two-camera performance');
 assert.match(runtime,/runningMode:'IMAGE'/, 'remote segmentation must not share video tracking state across Device 1 and Device 2');
+assert.doesNotMatch(app,/enabled&&=s\.how\.includes\('target'\)/,'auditory feedback must not depend on visual target visibility');
+assert.match(app,/targetSnapshot\(s,a,phase\)/,'all feedback must use the selected target variable');
 assert.match(html,/class="control-grid vbf-settings"/, 'settings must use the VBF Motion Lab control-card hierarchy');
 assert.doesNotMatch(html,/class="settings-grid"/, 'the former custom settings grid must not remain');
 for(const file of ['index.html','capture.html','feedback.html'])assert.doesNotMatch(fs.readFileSync(file,'utf8'),/[ぁ-んァ-ン一-龯]/,`${file} must contain English UI text only`);

@@ -13,3 +13,4 @@
 @media(max-width:1000px){.vbf-settings{grid-template-columns:1fr}.feedback-taxonomy{grid-template-columns:1fr}}
 /* Mirroring is source metadata-driven so video and overlay share one geometry transform. */
 .lab-viewport video,.lab-viewport canvas{transform:none}
+#targetChart{width:100%;height:180px;margin-top:12px;background:#0b0d0f}.phase-monitor h3{font-size:11px;letter-spacing:.12em;color:var(--muted);margin:20px 0 0}.background-status{margin-left:auto;color:var(--muted);font-size:10px}.debug-panel{margin:18px 0;border:1px solid var(--line);background:#101315;padding:10px 14px}.debug-panel summary{cursor:pointer;color:var(--lime);font-size:10px;letter-spacing:.14em}.debug-panel dl{display:grid;grid-template-columns:minmax(130px,auto) 1fr;gap:6px 16px}.debug-panel dt{color:var(--muted)}.debug-panel dd{margin:0;font-variant-numeric:tabular-nums}

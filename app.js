@@ -2,14 +2,15 @@ import { CameraRuntime } from './camera-runtime.js';
 import { aspectRatioValue, displayTransform, mapVideoPoint } from './geometry.mjs';
 import { storeRemote, currentRemote } from './remote-state.mjs';
 import { measurePose } from './measurements.mjs';
-import { circularMeanDegrees, relativePhase, wrapDegrees } from './phase.mjs';
+import { circularMeanDegrees, relativePhase } from './phase.mjs';
 import { appendBounded, cameraPhaseObservation, participantFeedbackVisible } from './monitor-state.mjs';
-import { gaugePercent, normalizeHow, participantState } from './feedback-state.mjs';
+import { normalizeHow, participantState } from './feedback-state.mjs';
 import { synchronizeDisplays } from './display-settings.mjs';
-import { auditoryDecision, playBeep, playVoice, resumeAudio } from './auditory-feedback.mjs';
+import { audioError, audioStatus, auditoryDecision, playBeep, playVoice, resumeAudio } from './auditory-feedback.mjs';
 import { SERIES_META, transformSeries, mixedUnits } from './graph-settings.mjs';
 import { COLOR_PALETTE, resolveColor } from './color-settings.mjs';
 import { compositeBackground, serializeBackground } from './background-settings.mjs';
+import { targetInside, targetMeta, targetPercent, targetSnapshot, targetToleranceSegments } from './target-feedback.mjs';
 import './qr-init.js';
 
 const $ = id => document.getElementById(id);
@@ -19,7 +20,7 @@ const state = {
   mode: 'idle', looping: false, recording: false, samples: [], phaseWindow: [], displayHistory: [],
   runtime: null, remote: { A: null, B: null }, connections: {}, previous: { A: null, B: null },
   trialStarted: null, terminalResult: null, lastFeedbackPublish: 0, targetProfiles: { relativePhase: { target:0, tolerance:20 } },
-  auditory: { previousOnTarget: null, beepLast: -Infinity, voiceLast: -Infinity }, remoteStreams:{A:null,B:null}, trialBaselines:{}, backgroundProcessed:{A:false,B:false}
+  auditory: { previousOnTarget: null, beepLast: -Infinity, voiceLast: -Infinity }, remoteStreams:{A:null,B:null}, trialBaselines:{}, backgroundProcessed:{A:false,B:false}, segmentationStatus:{A:'Original',B:'Original'}, currentTarget:null
 };
 const feedbackChannel = 'BroadcastChannel' in window ? new BroadcastChannel('slackline-feedback-v1') : null;
 const edges = [[11,12],[23,24],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,25],[25,27],[24,26],[26,28]];
@@ -29,6 +30,7 @@ const colorNames=['skeleton','joint','reference','axis','leftWave','rightWave','
 const colorConfiguration=()=>Object.fromEntries(colorNames.map(name=>[name,{preset:$(name+'ColorPreset').value,custom:$(name+'Color').value,value:colorValue(name)}]));
 const overlayStyle = () => ({ skeletonColor: colorValue('skeleton'), skeletonWidth: Number($('skeletonWidth').value), jointColor: colorValue('joint'), jointSize: Number($('jointSize').value), referenceColor: colorValue('reference'), axisColor: colorValue('axis'), leftWaveColor:colorValue('leftWave'), rightWaveColor:colorValue('rightWave'), phaseColor:colorValue('phase'), gaugeColor:colorValue('gauge'), targetRangeColor:colorValue('targetRange') });
 const backgroundConfiguration = () => serializeBackground(Object.fromEntries(['A','B'].map(id=>[id,{mode:$('backgroundMode'+id).value,blur:Number($('backgroundBlur'+id).value),color:$('backgroundColor'+id).value}])));
+const defaultTargetProfile=key=>key.includes('Knee')?{target:90,tolerance:10}:targetMeta(key).max===1?{target:.5,tolerance:.1}:{target:0,tolerance:key==='relativePhase'?20:10};
 const auditorySettings = kind => kind==='beep' ? {enabled:$('beepEnabled').checked,type:$('beepType').value,volume:Number($('beepVolume').value),trigger:$('beepTrigger').value,cooldown:Number($('beepCooldown').value)} : {enabled:$('voiceEnabled').checked,phrase:$('voicePhrase').value,customPhrase:$('voiceCustomPhrase').value,volume:Number($('voiceVolume').value),rate:Number($('voiceRate').value),trigger:$('voiceTrigger').value,cooldown:Number($('voiceCooldown').value)};
 const settings = () => ({
   when: $('when').value, what: $('what').value, amount: $('amount').value,
@@ -56,7 +58,7 @@ function applyDisplaySettings() {
   }
   $('skeletonWidthValue').value=$('skeletonWidth').value+' px'; $('jointSizeValue').value=$('jointSize').value+' px';
   try { sessionStorage.setItem('slackline-display-settings',JSON.stringify({display:displays,overlayStyle:overlayStyle(),colors:colorConfiguration()})); } catch {}
-  ensureLoop(); publishFeedback({valid:false},true);
+  ensureLoop(); publishFeedback(state.currentTarget,true);
 }
 
 function draw(id, landmarks, meta = {}) {
@@ -67,6 +69,8 @@ function draw(id, landmarks, meta = {}) {
   const transform=displayTransform(meta.videoWidth || video.videoWidth || canvas.width,meta.videoHeight || video.videoHeight || canvas.height,canvas.width,canvas.height,display.fit);
   const processed=$("camera" + id + "Video").checked && compositeBackground(context,video,meta.mask,transform,background);
   state.backgroundProcessed[id]=processed;
+  state.segmentationStatus[id]=background.mode==='original'?'Original':processed?`${background.mode==='blur'?'Blur':'Solid'} active`:'Segmentation mask unavailable; showing original video';
+  $('backgroundStatus'+id).textContent=state.segmentationStatus[id];
   video.style.visibility = $("camera" + id + "Video").checked && !processed ? 'visible' : 'hidden';
   if (!landmarks) return;
   const style = overlayStyle();
@@ -124,24 +128,27 @@ function chart() {
   Object.entries(transformed).forEach(([key,values],seriesIndex)=>{context.strokeStyle=palette[seriesIndex%palette.length];context.lineWidth=2*dpr;context.beginPath();let started=false;values.forEach((value,i)=>{if(!Number.isFinite(value)){started=false;return}const x=i/(rows.length-1)*canvas.width,y=(1-(value-min)/(max-min))*canvas.height;started?context.lineTo(x,y):context.moveTo(x,y);started=true});context.stroke()});
 }
 
-function updateResearchMonitor(phase) {
-  const s = settings(), colors=overlayStyle(), targetPercent = gaugePercent(s.target), tolerancePercent = Math.min(50, Math.max(0, s.tolerance / 360 * 100));
-  $('phaseNeedle').style.background=colors.gaugeColor; $('phaseTolerance').style.background=colors.targetRangeColor+'30'; $('phaseTolerance').style.borderColor=colors.targetRangeColor;
-  $('phaseTarget').style.left = targetPercent + '%'; $('phaseTolerance').style.left = Math.max(0, targetPercent - tolerancePercent) + '%';
-  $('phaseTolerance').style.width = Math.min(100 - Math.max(0, targetPercent - tolerancePercent), tolerancePercent * 2) + '%';
-  $('phaseTargetLabel').textContent = `${s.target}°`; $('phaseToleranceLabel').textContent = `${s.tolerance}°`;
-  $('monitorPhaseValue').textContent = phase.valid ? `${phase.value.toFixed(1)}°` : '—'; $('phaseNeedle').hidden = !phase.valid;
-  if (phase.valid) $('phaseNeedle').style.left = gaugePercent(phase.value) + '%';
-  $('phaseGauge').setAttribute('aria-valuenow', phase.valid ? phase.value.toFixed(1) : '');
+function drawTargetWaveform(feedback){const canvas=$('targetChart'),context=canvas.getContext('2d'),dpr=devicePixelRatio,rows=state.displayHistory,values=rows.map(row=>row[feedback.key]);canvas.width=canvas.clientWidth*dpr;canvas.height=canvas.clientHeight*dpr;context.clearRect(0,0,canvas.width,canvas.height);context.strokeStyle=overlayStyle().phaseColor;context.lineWidth=2*dpr;context.beginPath();let started=false;values.forEach((value,index)=>{if(!Number.isFinite(value)){started=false;return}const x=index/Math.max(1,values.length-1)*canvas.width,y=(1-(value-feedback.min)/(feedback.max-feedback.min))*canvas.height;started?context.lineTo(x,y):context.moveTo(x,y);started=true});context.stroke()}
+
+function updateResearchMonitor(feedback) {
+  const s = settings(), colors=overlayStyle(), targetPosition = targetPercent(feedback.key,s.target),segments=targetToleranceSegments(feedback.key,s.target,s.tolerance);
+  $('phaseNeedle').style.background=colors.gaugeColor;for(const [index,id] of ['phaseTolerance','phaseToleranceWrap'].entries()){const element=$(id),segment=segments[index];element.hidden=!segment;element.style.background=colors.targetRangeColor+'30';element.style.borderColor=colors.targetRangeColor;if(segment){element.style.left=segment.left+'%';element.style.width=segment.width+'%'}}
+  $('phaseTarget').style.left = targetPosition + '%';
+  $('targetMonitorTitle').textContent=`Target Feedback · ${feedback.label}`;$('phaseTargetLabel').textContent = `${s.target}${feedback.unit}`; $('phaseToleranceLabel').textContent = `${s.tolerance}${feedback.unit}`;
+  $('gaugeMin').textContent=`${feedback.min}${feedback.unit}`;$('gaugeMax').textContent=`${feedback.max}${feedback.unit}`;
+  $('monitorPhaseValue').textContent = feedback.value===null?'—':`${feedback.value.toFixed(feedback.decimals)}${feedback.unit}`; $('phaseNeedle').hidden = feedback.value===null;
+  if (feedback.value!==null) $('phaseNeedle').style.left = targetPercent(feedback.key,feedback.value) + '%';
+  $('phaseGauge').setAttribute('aria-valuemin',feedback.min);$('phaseGauge').setAttribute('aria-valuemax',feedback.max);$('phaseGauge').setAttribute('aria-label',`${feedback.label} target gauge`);$('phaseGauge').setAttribute('aria-valuenow', feedback.value===null?'':feedback.value.toFixed(feedback.decimals));drawTargetWaveform(feedback);
 }
 
 function processAuditory(value, terminal=false) {
-  const s=settings(), difference=s.targetVariable==='relativePhase'?Math.abs(wrapDegrees(value-s.target)):Math.abs(value-s.target), onTarget=Number.isFinite(value)&&difference<=s.tolerance, now=performance.now();
+  const s=settings(), onTarget=targetInside(s.targetVariable,value,s.target,s.tolerance), now=performance.now();
   const context={recording:state.recording,terminal,previousOnTarget:state.auditory.previousOnTarget,onTarget,now};
-  const beep=auditorySettings('beep'), voice=auditorySettings('voice'); beep.when=s.when; voice.when=s.when; beep.enabled&&=s.how.includes('target'); voice.enabled&&=s.how.includes('target');
-  if(auditoryDecision(beep,context,state.auditory.beepLast)){playBeep(beep.type,beep.volume);state.auditory.beepLast=now}
+  const beep=auditorySettings('beep'), voice=auditorySettings('voice'); beep.when=s.when; voice.when=s.when;
+  if(auditoryDecision(beep,context,state.auditory.beepLast)&&playBeep(beep.type,beep.volume))state.auditory.beepLast=now
   if(auditoryDecision(voice,context,state.auditory.voiceLast)){playVoice(voice);state.auditory.voiceLast=now}
-  state.auditory.previousOnTarget=onTarget;
+  if(onTarget!==null)state.auditory.previousOnTarget=onTarget;
+  updateDebug(s,value,onTarget);
 }
 
 function cameraSnapshot() {
@@ -153,10 +160,10 @@ function cameraSnapshot() {
   return canvas.toDataURL('image/jpeg', .65);
 }
 
-function publishFeedback(phase, force = false) {
+function publishFeedback(targetFeedback=state.currentTarget, force = false) {
   const now = performance.now(); if (!force && now - state.lastFeedbackPublish < 200) return;
   state.lastFeedbackPublish = now;
-  const s = settings(), payload = participantState(s, state.recording, state.terminalResult, phase, state.displayHistory, cameraSnapshot());
+  const s = settings(), payload = participantState(s, state.recording, state.terminalResult, targetFeedback, state.displayHistory, cameraSnapshot());
   payload.skeletonImage = s.how.includes('skeleton') && !state.backgroundProcessed.A ? $('canvasA').toDataURL('image/png') : null;
   feedbackChannel?.postMessage(payload);
   try { localStorage.setItem('slackline-feedback-state', JSON.stringify(payload)); } catch {}
@@ -183,8 +190,10 @@ function frame(time) {
     state.samples.push({ sessionId, trial: $('trial').value, condition: $('condition').value, memo: $('memo').value, wallTime: nowIso(), monotonicTime: time, mode: state.mode, sourceA: s.sourceA, sourceB: s.sourceB, cameraA: inputs.A.meta, cameraB: inputs.B.meta, ...a, rawLeftWristY: a.leftWristY, rawRightWristY: a.rightWristY, filteredLeftWristY: phase.filtered ? phase.left?.at(-1) : null, filteredRightWristY: phase.filtered ? phase.right?.at(-1) : null, relativePhase: phase.valid ? phase.value : null, phaseReason: phase.valid ? '' : phase.reason, missingA: measures.A.missing, missingB: measures.B.missing, freshnessA: inputs.A.receivedAt ? time-inputs.A.receivedAt : null, freshnessB: inputs.B.receivedAt ? time-inputs.B.receivedAt : null, timeDifference: inputs.A.timestamp && inputs.B.timestamp ? inputs.A.timestamp-inputs.B.timestamp : null, bf: s });
     if (state.samples.length > 20000) state.samples.shift();
   }
-  const current={...a,relativePhase:phase.valid?phase.value:null}[s.targetVariable]; updateResearchMonitor(phase); processAuditory(current); publishFeedback(phase); if (time % 100 < 18) chart(); requestAnimationFrame(frame);
+  const targetFeedback=targetSnapshot(s,a,phase);state.currentTarget=targetFeedback;updateResearchMonitor(targetFeedback);processAuditory(targetFeedback.value);publishFeedback(targetFeedback);if(time%100<18){chart();drawTargetWaveform(targetFeedback)}requestAnimationFrame(frame);
 }
+
+function updateDebug(s,value,inside){$('debugTargetVariable').textContent=targetMeta(s.targetVariable).label;$('debugCurrentValue').textContent=Number.isFinite(value)?String(value):'Invalid';$('debugTargetValue').textContent=String(s.target);$('debugTolerance').textContent=String(s.tolerance);$('debugInside').textContent=inside===null?'Invalid':inside?'Inside':'Outside';$('debugBeep').textContent=$('beepEnabled').checked?'ON':'OFF';$('debugAudio').textContent=audioError()||audioStatus();$('debugLastBeep').textContent=Number.isFinite(state.auditory.beepLast)?`${state.auditory.beepLast.toFixed(0)} ms`:'Never';$('debugSegmentation').textContent=`Camera 1: ${state.segmentationStatus.A}; Camera 2: ${state.segmentationStatus.B}`}
 
 function bindVideoSources() {
   for(const id of ['A','B']) {
@@ -196,21 +205,21 @@ function ensureLoop() { if (!state.looping) { state.looping = true; requestAnima
 function stopInputs() { state.runtime?.stop(); state.runtime = null; state.looping = false; for (const id of ['A','B']) { draw(id, null); setVideoPresence(id, false); } }
 async function startCams() { stopInputs(); state.mode = 'camera'; bindVideoSources(); const pcA=$('sourceA').value==='pc'&&$('cameraAEnabled').checked,pcB=$('sourceB').value==='pc'&&$('cameraBEnabled').checked;if(pcA&&pcB){message('Camera 1 and Camera 2 cannot acquire the same PC camera. Choose another source for either camera.');return} state.runtime = new CameraRuntime({ onState: (id,text) => { $(id.toLowerCase()+'State').textContent = text; }, onError: message, onVideo: setVideoPresence, onFrame: (id,lm) => { if (!lm) draw(id,null); } }); const local={A:$('sourceA').value==='pc'&&$('cameraAEnabled').checked,B:$('sourceB').value==='pc'&&$('cameraBEnabled').checked}, remoteBackground=['A','B'].some(id=>$('source'+id).value!=='pc'&&backgroundConfiguration()[id].mode!=='original'); if(local.A||local.B)await state.runtime.start(local);if(remoteBackground)await state.runtime.initExternal(); ensureLoop(); }
 function startSim() { stopInputs(); state.mode = 'sim'; $('simulationBadge').hidden = false; for (const id of ['A','B']) setVideoPresence(id, true); message('SIMULATION: generated data are not measured values'); ensureLoop(); }
-async function startTrial() { await resumeAudio(); state.samples = []; state.phaseWindow = []; state.recording = true; state.auditory.previousOnTarget=null; state.auditory.beepLast=state.auditory.voiceLast=-Infinity; state.trialBaselines={}; const first=state.displayHistory.at(-1)||{}; for(const key of settings().graph.series)if(Number.isFinite(first[key]))state.trialBaselines[key]=first[key]; state.terminalResult = null; state.trialStarted = nowIso(); $('modeStatus').textContent = 'Recording'; ensureLoop(); publishFeedback({valid:false}, true); message('A new trial has started'); }
-function stopTrial() { state.recording = false; $('modeStatus').textContent = 'Stopped'; if (settings().when === 'terminal') { const key=settings().targetVariable,valid=state.samples.map(x=>x[key]).filter(Number.isFinite), result=key==='relativePhase'?circularMeanDegrees(valid):(valid.length?valid.reduce((a,b)=>a+b,0)/valid.length:null); state.terminalResult = result ?? Number.NaN; processAuditory(state.terminalResult,true); message(`Terminal KR: trial ${$('trial').value} / valid ${valid.length} samples`); } publishFeedback({valid:false}, true); }
-function reset() { state.recording = false; state.samples = []; state.phaseWindow = []; state.displayHistory = []; state.previous = { A:null, B:null }; state.terminalResult = null; chart(); publishFeedback({valid:false}, true); message('Trial data has been reset'); }
+async function startTrial() { await resumeAudio(); state.samples = []; state.phaseWindow = []; state.recording = true; state.auditory.previousOnTarget=null; state.auditory.beepLast=state.auditory.voiceLast=-Infinity; state.trialBaselines={}; const first=state.displayHistory.at(-1)||{}; for(const key of settings().graph.series)if(Number.isFinite(first[key]))state.trialBaselines[key]=first[key]; state.terminalResult = null; state.trialStarted = nowIso(); $('modeStatus').textContent = 'Recording'; ensureLoop(); publishFeedback(state.currentTarget,true); message('A new trial has started'); }
+function stopTrial() { state.recording = false; $('modeStatus').textContent = 'Stopped'; if (settings().when === 'terminal') { const key=settings().targetVariable,valid=state.samples.map(x=>x[key]).filter(Number.isFinite), result=key==='relativePhase'?circularMeanDegrees(valid):(valid.length?valid.reduce((a,b)=>a+b,0)/valid.length:null); state.terminalResult = result ?? Number.NaN; processAuditory(state.terminalResult,true); message(`Terminal KR: trial ${$('trial').value} / valid ${valid.length} samples`); } publishFeedback(state.currentTarget,true); }
+function reset() { state.recording = false; state.samples = []; state.phaseWindow = []; state.displayHistory = []; state.previous = { A:null, B:null }; state.terminalResult = null; chart(); publishFeedback(state.currentTarget,true); message('Trial data has been reset'); }
 function download(kind) { const meta = { sessionId, trialStarted: state.trialStarted, exportedAt: nowIso(), settings: settings(), samples: state.samples }; let body,type; if (kind === 'json') { body=JSON.stringify(meta,null,2); type='application/json'; } else { const flat=state.samples.map(x=>({...x,cameraA:JSON.stringify(x.cameraA),cameraB:JSON.stringify(x.cameraB),bf:JSON.stringify(x.bf)})),keys=[...new Set(flat.flatMap(Object.keys))]; body='\ufeff'+keys.join(',')+'\n'+flat.map(row=>keys.map(key=>`"${String(row[key]??'').replaceAll('"','""')}"`).join(',')).join('\n'); type='text/csv'; } const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([body],{type})); a.download=`slackline-${sessionId}-${$('trial').value}.${kind}`; a.click(); URL.revokeObjectURL(a.href); }
 
 $('startCams').onclick=startCams; $('stopAll').onclick=stopInputs; $('startSim').onclick=startSim; $('startTrial').onclick=startTrial; $('stopTrial').onclick=stopTrial; $('resetTrial').onclick=reset; $('downloadCsv').onclick=()=>download('csv'); $('downloadJson').onclick=()=>download('json'); $('fullscreen').onclick=()=>document.documentElement.requestFullscreen?.();
 $('openFeedback').onclick=()=>window.open('./feedback.html', 'slackline-feedback');
 for (const id of ['A','B']) { $('camera'+id+'Video').onchange = () => draw(id, source(id, performance.now()).landmarks); for(const control of ['Reference','Axis','Skeleton','Joints'])$('camera'+id+control).onchange=()=>ensureLoop(); const video=$('video'+id); video.addEventListener('playing',()=>setVideoPresence(id,true)); video.addEventListener('emptied',()=>setVideoPresence(id,false)); }
-for (const id of ['when','what','amount','target','tolerance','feedbackCamera','lowPassEnabled','lowPassCutoff','beepEnabled','beepType','beepVolume','beepTrigger','beepCooldown','voiceEnabled','voicePhrase','voiceCustomPhrase','voiceVolume','voiceRate','voiceTrigger','voiceCooldown']) $(id).onchange=()=>{ ensureLoop(); publishFeedback({valid:false}, true); };
+for (const id of ['when','what','amount','target','tolerance','feedbackCamera','lowPassEnabled','lowPassCutoff','beepEnabled','beepType','beepVolume','beepTrigger','beepCooldown','voiceEnabled','voicePhrase','voiceCustomPhrase','voiceVolume','voiceRate','voiceTrigger','voiceCooldown']) $(id).onchange=()=>{ ensureLoop(); publishFeedback(state.currentTarget,true); };
 $('targetVariable').dataset.previous='relativePhase';
-$('targetVariable').onchange=event=>{ state.targetProfiles[event.target.dataset.previous]={target:Number($('target').value),tolerance:Number($('tolerance').value)}; const profile=state.targetProfiles[event.target.value]||{target:0,tolerance:20}; state.targetProfiles[event.target.value]=profile; $('target').value=profile.target; $('tolerance').value=profile.tolerance; event.target.dataset.previous=event.target.value; publishFeedback({valid:false},true); };
-for (const input of document.querySelectorAll('#how input')) input.onchange=()=>{ ensureLoop(); publishFeedback({valid:false}, true); };
+$('targetVariable').onchange=event=>{ state.targetProfiles[event.target.dataset.previous]={target:Number($('target').value),tolerance:Number($('tolerance').value)}; const profile=state.targetProfiles[event.target.value]||defaultTargetProfile(event.target.value),meta=targetMeta(event.target.value); state.targetProfiles[event.target.value]=profile; $('target').min=meta.min;$('target').max=meta.max;$('target').step=meta.unit==='°'?'1':'0.01';$('tolerance').max=meta.max-meta.min;$('tolerance').step=meta.unit==='°'?'1':'0.01';$('targetUnit').textContent=meta.unit;$('toleranceUnit').textContent=meta.unit;$('target').value=profile.target; $('tolerance').value=profile.tolerance; event.target.dataset.previous=event.target.value; state.auditory.previousOnTarget=null;ensureLoop(); };
+for (const input of document.querySelectorAll('#how input')) input.onchange=()=>{ ensureLoop(); publishFeedback(state.currentTarget,true); };
 for (const id of ['cameraAEnabled','cameraBEnabled','sourceA','sourceB']) $(id).onchange=()=>state.mode === 'camera' ? startCams() : (bindVideoSources(),ensureLoop());
 for(const id of ['yAxisMode','yAutoRange','yMin','yMax','relativeBaseline'])$(id).onchange=()=>chart();
-for(const id of ['backgroundModeA','backgroundBlurA','backgroundColorA','backgroundModeB','backgroundBlurB','backgroundColorB'])$(id).oninput=async()=>{if(state.mode==='camera'&&!state.runtime?.backgroundPose&&['A','B'].some(camera=>$('source'+camera).value!=='pc'&&backgroundConfiguration()[camera].mode!=='original')){state.runtime??=new CameraRuntime({onError:message});await state.runtime.initExternal()}ensureLoop();publishFeedback({valid:false},true)};
+for(const id of ['backgroundModeA','backgroundBlurA','backgroundColorA','backgroundModeB','backgroundBlurB','backgroundColorB'])$(id).oninput=async()=>{if(state.mode==='camera'&&!state.runtime?.backgroundPose&&['A','B'].some(camera=>$('source'+camera).value!=='pc'&&backgroundConfiguration()[camera].mode!=='original')){state.runtime??=new CameraRuntime({onError:message});await state.runtime.initExternal()}ensureLoop();publishFeedback(state.currentTarget,true)};
 for(const input of document.querySelectorAll('#variables input'))input.addEventListener('change',chart);
 for(const name of colorNames){const select=$(name+'ColorPreset'),custom=$(name+'Color');for(const [key,value] of Object.entries(COLOR_PALETTE)){const option=document.createElement('option');option.value=key;option.textContent=key[0].toUpperCase()+key.slice(1);select.append(option)}const option=document.createElement('option');option.value='custom';option.textContent='Custom';select.append(option);const match=Object.entries(COLOR_PALETTE).find(([,value])=>value.toLowerCase()===custom.value.toLowerCase());select.value=match?.[0]||'custom';select.onchange=()=>{if(select.value!=='custom')custom.value=COLOR_PALETTE[select.value];applyDisplaySettings()};custom.oninput=()=>{select.value='custom';applyDisplaySettings()}}
 for (const id of ['aspectA','fitA','customWidthA','customHeightA','aspectB','fitB','customWidthB','customHeightB','applyBoth','skeletonWidth','jointSize']) $(id).oninput=applyDisplaySettings;
